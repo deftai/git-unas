@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.11.1'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -27,7 +27,7 @@ jobs:
 
       - name: Build ARM64 binary
         run: |
-          # @yao-pkg/pkg fetches pre-built Node.js 20 arm64 host binaries automatically.
+          # @yao-pkg/pkg fetches pre-built Node.js 22 arm64 host binaries automatically.
           npm run build:binary
 
       - name: Extract version
