@@ -36,6 +36,17 @@ border-radius:50%;animation:spin 1s linear infinite}
 font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .pill.green{background:#1a3a1a;color:#a0e0a0}
 .pill.red{background:#3a1a1a;color:#e0a0a0}
+.pill.amber{background:#3a2a1a;color:#e0c290}
+.days{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.day-btn{background:#111621;border:1px solid #3a4255;border-radius:4px;padding:4px 10px;
+font-size:12px;cursor:pointer;color:#9aa0a6;min-width:0;white-space:nowrap}
+.day-btn.on{background:#1e3a5f;border-color:#1e6feb;color:#e8eaed}
+.backup-list{max-height:180px;overflow-y:auto;font-size:12px}
+.backup-row{display:flex;justify-content:space-between;align-items:center;
+padding:4px 0;border-bottom:1px solid #1a1f2b;color:#c6c9cc}
+.backup-row:last-child{border-bottom:0}
+.backup-row .ts{color:#9aa0a6}
+.backup-row .sz{color:#7a8190}
 code{background:#111621;padding:2px 6px;border-radius:3px;font-size:12px}
 pre{background:#111621;border:1px solid #2a3140;border-radius:4px;padding:10px;
 font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;
@@ -107,6 +118,67 @@ AES-256-GCM with PBKDF2 key derivation. Encrypted files use the <code>.unas</cod
   <input type="password" id="dec-pass" placeholder="passphrase"></div>
   <div class="row"><button onclick="doDecrypt()">Decrypt</button></div>
   <div class="msg" id="dec-msg"></div>
+</div></div>
+
+<!-- Scheduled Backup -->
+<div class="card"><h2>Scheduled Backup</h2>
+<p style="font-size:12px;color:#9aa0a6;margin:0 0 10px 0">
+Automatically tars a source path on a cron schedule and rotates old backups.</p>
+
+<div class="row">
+  <label>Enable</label>
+  <select id="sched-enabled">
+    <option value="false">Disabled</option>
+    <option value="true">Enabled</option>
+  </select>
+</div>
+
+<div class="row">
+  <label>Time (24h)</label>
+  <div style="display:flex;gap:6px;align-items:center">
+    <input type="text" id="sched-hour" placeholder="HH" style="width:52px;flex:none" maxlength="2">
+    <span style="color:#9aa0a6">:</span>
+    <input type="text" id="sched-minute" placeholder="MM" style="width:52px;flex:none" maxlength="2">
+  </div>
+</div>
+
+<div class="row" style="align-items:flex-start">
+  <label style="padding-top:4px">Days</label>
+  <div class="days" id="sched-days">
+    <button class="day-btn" data-day="mon" onclick="toggleDay(this)">Mon</button>
+    <button class="day-btn" data-day="tue" onclick="toggleDay(this)">Tue</button>
+    <button class="day-btn" data-day="wed" onclick="toggleDay(this)">Wed</button>
+    <button class="day-btn" data-day="thu" onclick="toggleDay(this)">Thu</button>
+    <button class="day-btn" data-day="fri" onclick="toggleDay(this)">Fri</button>
+    <button class="day-btn" data-day="sat" onclick="toggleDay(this)">Sat</button>
+    <button class="day-btn" data-day="sun" onclick="toggleDay(this)">Sun</button>
+    <button class="day-btn" id="day-all" onclick="toggleAllDays()">Every day</button>
+  </div>
+</div>
+
+<div class="row">
+  <label>Source path</label>
+  <input type="text" id="sched-source" placeholder="/mnt/nas/data">
+</div>
+<div class="row">
+  <label>Backup dir</label>
+  <input type="text" id="sched-backupdir" placeholder="/mnt/nas/backups">
+</div>
+<div class="row">
+  <label>Keep (backups)</label>
+  <input type="text" id="sched-keep" placeholder="7" style="width:60px;flex:none">
+</div>
+
+<div class="row">
+  <button onclick="saveSchedule()">Save</button>
+  <button onclick="runNow()" style="background:#2a4a2a;border-color:#3a6a3a">Run now</button>
+</div>
+<div class="msg" id="sched-msg"></div>
+
+<div style="margin-top:10px">
+  <div class="kv" id="sched-status" style="margin-bottom:8px"></div>
+  <div style="font-size:12px;color:#9aa0a6;margin-bottom:4px">Recent backups</div>
+  <div class="backup-list" id="sched-backups"><span style="color:#5a6172">None yet.</span></div>
 </div></div>
 
 <div class="spinner" id="spinner">
@@ -214,5 +286,100 @@ async function doDecrypt() {
 
 fetchStatus();
 setInterval(fetchStatus, 30000);
+
+// ---- Scheduled backup ----
+function toggleDay(btn) {
+  btn.classList.toggle('on');
+  document.getElementById('day-all').classList.remove('on');
+}
+function toggleAllDays() {
+  const all = document.getElementById('day-all');
+  const on = !all.classList.contains('on');
+  all.classList.toggle('on', on);
+  document.querySelectorAll('#sched-days .day-btn[data-day]').forEach(b => b.classList.toggle('on', on));
+}
+function selectedDays() {
+  const btns = document.querySelectorAll('#sched-days .day-btn[data-day].on');
+  return Array.from(btns).map(b => b.dataset.day);
+}
+function applyScheduleState(cfg) {
+  document.getElementById('sched-enabled').value = String(!!cfg.enabled);
+  document.getElementById('sched-hour').value = String(cfg.hour ?? 6).padStart(2,'0');
+  document.getElementById('sched-minute').value = String(cfg.minute ?? 0).padStart(2,'0');
+  document.getElementById('sched-source').value = cfg.source || '';
+  document.getElementById('sched-backupdir').value = cfg.backupDir || '';
+  document.getElementById('sched-keep').value = String(cfg.keepCount ?? 7);
+  const activeDays = new Set(cfg.days || []);
+  document.querySelectorAll('#sched-days .day-btn[data-day]').forEach(b => {
+    b.classList.toggle('on', activeDays.has(b.dataset.day));
+  });
+  const allOn = activeDays.size === 0 || activeDays.size === 7;
+  document.getElementById('day-all').classList.toggle('on', allOn);
+}
+function fmtSize(b) {
+  if (b >= 1073741824) return (b/1073741824).toFixed(1)+' GB';
+  if (b >= 1048576)    return (b/1048576).toFixed(1)+' MB';
+  if (b >= 1024)       return (b/1024).toFixed(1)+' KB';
+  return b+' B';
+}
+function renderScheduleStatus(data) {
+  const { config, nextRun, lastRun, backups } = data;
+  const lines = [];
+  lines.push(`<span class="k">Status</span><span><span class="pill ${config.enabled ? 'green' : 'grey'}">${config.enabled ? 'enabled' : 'disabled'}</span></span>`);
+  if (nextRun) lines.push(`<span class="k">Next run</span><span>${new Date(nextRun).toLocaleString()}</span>`);
+  if (lastRun) lines.push(`<span class="k">Last run</span><span><span class="pill ${lastRun.status === 'ok' ? 'green' : 'red'}">${lastRun.status}</span> ${new Date(lastRun.timestamp).toLocaleString()} — ${lastRun.message}</span>`);
+  document.getElementById('sched-status').innerHTML = lines.join('');
+  const bEl = document.getElementById('sched-backups');
+  if (!backups || !backups.length) {
+    bEl.innerHTML = '<span style="color:#5a6172">None yet.</span>';
+  } else {
+    bEl.innerHTML = backups.map(b =>
+      `<div class="backup-row"><span>${b.file}</span><span class="sz">${fmtSize(b.sizeBytes)}</span></div>`
+    ).join('');
+  }
+}
+async function loadSchedule() {
+  try {
+    const r = await fetch('api/schedule');
+    const j = await r.json();
+    applyScheduleState(j.config);
+    renderScheduleStatus(j);
+  } catch {}
+}
+async function saveSchedule() {
+  const days = selectedDays();
+  const hour = parseInt(document.getElementById('sched-hour').value, 10);
+  const minute = parseInt(document.getElementById('sched-minute').value, 10);
+  const keepCount = parseInt(document.getElementById('sched-keep').value, 10);
+  if (isNaN(hour) || hour < 0 || hour > 23) { msg('sched-msg', 'Hour must be 0–23', false); return; }
+  if (isNaN(minute) || minute < 0 || minute > 59) { msg('sched-msg', 'Minute must be 0–59', false); return; }
+  if (isNaN(keepCount) || keepCount < 1) { msg('sched-msg', 'Keep count must be ≥ 1', false); return; }
+  const r = await post('api/schedule', {
+    enabled: document.getElementById('sched-enabled').value === 'true',
+    hour, minute, days,
+    source: document.getElementById('sched-source').value.trim(),
+    backupDir: document.getElementById('sched-backupdir').value.trim(),
+    keepCount,
+  });
+  if (r.ok) {
+    applyScheduleState(r.data.config);
+    renderScheduleStatus({ config: r.data.config, nextRun: r.data.nextRun, lastRun: null, backups: [] });
+    await loadSchedule();
+  }
+  msg('sched-msg', r.ok ? 'Schedule saved.' : (r.data.error || 'Failed'), r.ok);
+}
+async function runNow() {
+  const source = document.getElementById('sched-source').value.trim();
+  const backupDir = document.getElementById('sched-backupdir').value.trim();
+  if (!source || !backupDir) { msg('sched-msg', 'Source path and backup dir are required', false); return; }
+  spin(true, 'Running backup…');
+  const r = await post('api/schedule/run', {});
+  spin(false);
+  if (r.ok) renderScheduleStatus({ config: (await (await fetch('api/schedule')).json()).config, nextRun: null, lastRun: null, backups: r.data.backups });
+  msg('sched-msg', r.ok ? `Backup complete: ${r.data.destination}` : (r.data.error || 'Failed'), r.ok);
+}
+
+loadSchedule();
+setInterval(loadSchedule, 30000);
 </script>
 </body></html>
