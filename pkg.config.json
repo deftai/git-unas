@@ -8,6 +8,6 @@
     "dist/**/*.js"
   ],
   "targets": [
-    "node18-linux-arm64"
+    "node20-linux-arm64"
   ]
 }
