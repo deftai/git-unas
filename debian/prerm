@@ -1,0 +1,31 @@
+#!/bin/sh
+# Pre-remove script for git-unas.
+# Stops the service and reverts nginx on removal; leaves nginx alone on upgrade
+# so there is no downtime window between the old and new package.
+set -e
+
+LIBEXEC=/usr/libexec/git-unas
+
+case "$1" in
+    remove|deconfigure)
+        systemctl stop git-unas.service 2>/dev/null || true
+        systemctl disable git-unas.service 2>/dev/null || true
+
+        # Strip nginx block and reload.
+        if [ -x "$LIBEXEC/nginx-strip.sh" ]; then
+            "$LIBEXEC/nginx-strip.sh" || true
+        fi
+        ;;
+
+    upgrade|failed-upgrade)
+        # On upgrade dpkg installs the new binary before calling prerm remove,
+        # so we leave the service running and nginx intact.
+        ;;
+
+    *)
+        echo "prerm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

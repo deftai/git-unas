@@ -1,0 +1,13 @@
+Package: git-unas
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: @ARCH@
+Maintainer: demiurge28 <@MAINTAINER_EMAIL@>
+Depends: libc6, systemd
+Homepage: https://github.com/demiurge28/git-unas
+Description: Git clone, tar, and encryption admin UI for Ubiquiti UNAS
+ A Node.js web admin page served on 127.0.0.1:7892 and exposed
+ via nginx at https://<device>/git-unas/. Provides a browser UI
+ to run git clone, tar archiving, file encryption, and scheduled
+ backups on a Ubiquiti UNAS device running UniFi OS.

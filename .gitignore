@@ -17,3 +17,8 @@ secrets/*
 
 # OS
 .DS_Store
+
+# Build artifacts
+dist/deb-stage/
+dist/git-unas-arm64
+dist/*.deb

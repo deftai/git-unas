@@ -1,0 +1,10 @@
+# /etc/default/git-unas
+# Default environment for the git-unas service.
+# This file is managed by the package. Edit /etc/default/git-unas.local
+# for overrides that persist across upgrades.
+
+# Listen port (proxied through nginx; only binds on 127.0.0.1)
+PORT=7892
+
+# Schedule config file location
+SCHEDULE_CONFIG_PATH=/etc/git-unas/schedule.json

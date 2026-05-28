@@ -1,0 +1,78 @@
+name: Release .deb
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npm run build
+
+      - name: Build ARM64 binary
+        run: |
+          # @yao-pkg/pkg fetches pre-built Node.js 18 arm64 host binaries automatically.
+          npm run build:binary
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dpkg-dev
+        run: sudo apt-get install -y dpkg-dev
+
+      - name: Build .deb
+        run: scripts/build-deb.sh --arch arm64 --version "${{ steps.version.outputs.version }}"
+
+      - name: Verify .deb
+        run: |
+          DEB="dist/git-unas_${{ steps.version.outputs.version }}_arm64.deb"
+          echo "=== dpkg-deb info ==="
+          dpkg-deb --info "$DEB"
+          echo "=== contents ==="
+          dpkg-deb --contents "$DEB"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/git-unas_${{ steps.version.outputs.version }}_arm64.deb
+          body: |
+            ## Install
+
+            ### One-line (recommended)
+            ```sh
+            curl -fsSL https://raw.githubusercontent.com/demiurge28/git-unas/main/gh-pages/install.sh | sh
+            ```
+
+            ### Manual .deb
+            ```sh
+            VER=${{ steps.version.outputs.version }}
+            curl -fsSL -O https://github.com/demiurge28/git-unas/releases/download/v${VER}/git-unas_${VER}_arm64.deb
+            dpkg -i git-unas_${VER}_arm64.deb
+            ```
+
+            ### Uninstall
+            ```sh
+            apt-get remove git-unas          # stops service, reverts nginx
+            apt-get purge  git-unas          # also removes /etc/git-unas/
+            # Full purge including recovery layer:
+            rm -rf /data/git-unas /etc/cron.d/git-unas-*
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
