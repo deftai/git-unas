@@ -1,0 +1,13 @@
+{
+  "assets": [
+    "public/**/*",
+    "node_modules/express/**",
+    "node_modules/node-cron/**"
+  ],
+  "scripts": [
+    "dist/**/*.js"
+  ],
+  "targets": [
+    "node18-linux-arm64"
+  ]
+}

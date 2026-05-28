@@ -1,0 +1,21 @@
+[Unit]
+Description=git-unas admin server
+Documentation=https://github.com/demiurge28/git-unas
+After=network.target
+
+[Service]
+Type=simple
+User=root
+# Default environment (shipped; dpkg may prompt if edited on upgrade).
+EnvironmentFile=-/etc/default/git-unas
+# User overrides — never shipped; persists across upgrades. Values here win.
+EnvironmentFile=-/etc/default/git-unas.local
+ExecStart=/usr/bin/git-unas
+# `always` lets the admin UI save config and exit; systemd brings it back.
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

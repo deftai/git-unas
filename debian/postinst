@@ -1,0 +1,45 @@
+#!/bin/sh
+# Post-install script for git-unas.
+set -e
+
+CONFIG_DIR=/etc/git-unas
+LIBEXEC=/usr/libexec/git-unas
+
+case "$1" in
+    configure)
+        # Create config directory.
+        mkdir -p "$CONFIG_DIR"
+        chmod 700 "$CONFIG_DIR"
+
+        # Inject nginx proxy block (best effort — non-fatal on non-UNAS).
+        if [ -x "$LIBEXEC/nginx-inject.sh" ]; then
+            "$LIBEXEC/nginx-inject.sh" || true
+        fi
+
+        # Reload systemd and enable/start the service.
+        systemctl daemon-reload
+
+        if [ -z "$2" ]; then
+            # Fresh install.
+            systemctl enable --now git-unas.service
+        else
+            # Upgrade: re-inject nginx (picks up any config changes) and
+            # restart the service to pick up the new binary.
+            if [ -x "$LIBEXEC/nginx-inject.sh" ]; then
+                "$LIBEXEC/nginx-inject.sh" || true
+            fi
+            systemctl enable git-unas.service
+            systemctl try-restart git-unas.service || true
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0
