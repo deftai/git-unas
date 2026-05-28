@@ -1,0 +1,56 @@
+version: '3'
+
+tasks:
+  default:
+    desc: List all tasks
+    cmds:
+      - task --list
+    silent: true
+
+  check:
+    desc: Run all pre-commit checks (fmt, lint, build, test:coverage)
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: build
+      - task: test:coverage
+
+  fmt:
+    desc: Format code (prettier)
+    cmds:
+      - npm run fmt
+
+  fmt:check:
+    desc: Check formatting without writing
+    cmds:
+      - npm run fmt:check
+
+  lint:
+    desc: Lint TypeScript (eslint)
+    cmds:
+      - npm run lint
+
+  build:
+    desc: Compile TypeScript to dist/
+    cmds:
+      - npm run build
+
+  dev:
+    desc: Start dev server with hot-reload
+    cmds:
+      - npm run dev
+
+  test:
+    desc: Run tests
+    cmds:
+      - npm test
+
+  test:coverage:
+    desc: Run tests with coverage (>=85%)
+    cmds:
+      - npm run test:coverage
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf dist

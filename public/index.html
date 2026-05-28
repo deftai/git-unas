@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>git-unas admin</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{background:#0e1118;color:#e8eaed;font-family:-apple-system,system-ui,sans-serif;
+margin:0;padding:24px;max-width:720px}
+h1{font-size:20px;color:#8be9fd;margin:0 0 16px 0}
+.card{background:#1a1f2b;border:1px solid #2a3140;border-radius:6px;
+padding:16px;margin-bottom:12px}
+.card h2{font-size:14px;color:#9aa0a6;margin:0 0 8px 0;text-transform:uppercase;
+letter-spacing:.04em}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0;flex-wrap:wrap}
+.row label{flex:1;color:#c6c9cc;min-width:80px}
+button,select,input[type=text],input[type=password]{background:#111621;color:#e8eaed;
+border:1px solid #3a4255;border-radius:4px;padding:6px 12px;font-size:13px}
+input[type=text],input[type=password]{flex:2;min-width:0}
+button{cursor:pointer;background:#1e6feb;border-color:#1e6feb;color:#fff;white-space:nowrap}
+button:hover{background:#3d85ef}
+button:disabled{opacity:0.5;cursor:not-allowed}
+button.danger{background:#b23;border-color:#b23}
+button.danger:hover{background:#d44}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px;font-size:13px}
+.kv .k{color:#9aa0a6}
+.msg{padding:8px 12px;border-radius:4px;margin-top:8px;font-size:13px;display:none}
+.msg.ok{background:#1a3a1a;color:#a0e0a0;display:block}
+.msg.err{background:#3a1a1a;color:#e0a0a0;display:block}
+.spinner{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(14,17,24,0.9);
+display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;
+z-index:99}
+.spinner.on{display:flex}
+.spinner-circle{width:36px;height:36px;border:3px solid #3a4255;border-top-color:#1e6feb;
+border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;
+font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.pill.green{background:#1a3a1a;color:#a0e0a0}
+.pill.red{background:#3a1a1a;color:#e0a0a0}
+code{background:#111621;padding:2px 6px;border-radius:3px;font-size:12px}
+pre{background:#111621;border:1px solid #2a3140;border-radius:4px;padding:10px;
+font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;
+max-height:200px;overflow-y:auto;margin:8px 0 0 0}
+</style></head><body>
+<h1>git-unas</h1>
+
+<!-- Status -->
+<div class="card"><h2>Status</h2>
+<div class="kv" id="status">Loading…</div></div>
+
+<!-- Git Clone -->
+<div class="card"><h2>Git Clone</h2>
+<div class="row"><label>Repo URL</label>
+<input type="text" id="git-url" placeholder="https://github.com/user/repo.git"></div>
+<div class="row"><label>Destination</label>
+<input type="text" id="git-dest" placeholder="/mnt/nas/repos/repo-name"></div>
+<div class="row"><label>Branch</label>
+<input type="text" id="git-branch" placeholder="(default branch)"></div>
+<div class="row"><button onclick="doGitClone()">Clone</button></div>
+<pre id="git-output" style="display:none"></pre>
+<div class="msg" id="git-msg"></div></div>
+
+<!-- Tar -->
+<div class="card"><h2>Tar Archive</h2>
+<div class="card" style="background:#111621;border-color:#2a3140;margin-bottom:8px">
+  <h2 style="font-size:12px">Create</h2>
+  <div class="row"><label>Source</label>
+  <input type="text" id="tar-source" placeholder="/mnt/nas/path/to/source"></div>
+  <div class="row"><label>Archive</label>
+  <input type="text" id="tar-dest" placeholder="/mnt/nas/path/to/archive.tar.gz"></div>
+  <div class="row"><label>Compress</label>
+  <select id="tar-compress"><option value="true">Yes (gzip)</option><option value="false">No</option></select></div>
+  <div class="row"><button onclick="doTarCreate()">Create archive</button></div>
+  <div class="msg" id="tar-create-msg"></div>
+</div>
+<div class="card" style="background:#111621;border-color:#2a3140">
+  <h2 style="font-size:12px">Extract</h2>
+  <div class="row"><label>Archive</label>
+  <input type="text" id="tar-archive" placeholder="/mnt/nas/path/to/archive.tar.gz"></div>
+  <div class="row"><label>Destination</label>
+  <input type="text" id="tar-extract-dest" placeholder="/mnt/nas/path/to/output"></div>
+  <div class="row"><button onclick="doTarExtract()">Extract</button></div>
+  <div class="msg" id="tar-extract-msg"></div>
+</div></div>
+
+<!-- Encrypt -->
+<div class="card"><h2>Encryption</h2>
+<p style="font-size:12px;color:#9aa0a6;margin:0 0 8px 0">
+AES-256-GCM with PBKDF2 key derivation. Encrypted files use the <code>.unas</code> extension by convention.</p>
+<div class="card" style="background:#111621;border-color:#2a3140;margin-bottom:8px">
+  <h2 style="font-size:12px">Encrypt</h2>
+  <div class="row"><label>Source</label>
+  <input type="text" id="enc-source" placeholder="/mnt/nas/file.tar.gz"></div>
+  <div class="row"><label>Destination</label>
+  <input type="text" id="enc-dest" placeholder="/mnt/nas/file.tar.gz.unas"></div>
+  <div class="row"><label>Passphrase</label>
+  <input type="password" id="enc-pass" placeholder="passphrase"></div>
+  <div class="row"><button onclick="doEncrypt()">Encrypt</button></div>
+  <div class="msg" id="enc-msg"></div>
+</div>
+<div class="card" style="background:#111621;border-color:#2a3140">
+  <h2 style="font-size:12px">Decrypt</h2>
+  <div class="row"><label>Source</label>
+  <input type="text" id="dec-source" placeholder="/mnt/nas/file.tar.gz.unas"></div>
+  <div class="row"><label>Destination</label>
+  <input type="text" id="dec-dest" placeholder="/mnt/nas/file.tar.gz"></div>
+  <div class="row"><label>Passphrase</label>
+  <input type="password" id="dec-pass" placeholder="passphrase"></div>
+  <div class="row"><button onclick="doDecrypt()">Decrypt</button></div>
+  <div class="msg" id="dec-msg"></div>
+</div></div>
+
+<div class="spinner" id="spinner">
+<div class="spinner-circle"></div>
+<div id="spinner-text">Working…</div></div>
+
+<script>
+function msg(id, text, ok) {
+  const e = document.getElementById(id);
+  e.textContent = text;
+  e.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+function spin(on, text) {
+  document.getElementById('spinner-text').textContent = text || 'Working…';
+  document.getElementById('spinner').classList.toggle('on', on);
+}
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { ok: r.ok, status: r.status, data: await r.json() };
+}
+
+async function fetchStatus() {
+  try {
+    const r = await fetch('api/status');
+    const j = await r.json();
+    document.getElementById('status').innerHTML =
+      `<span class="k">Version</span><span>${j.version}</span>` +
+      `<span class="k">Status</span><span><span class="pill green">running</span></span>`;
+  } catch {
+    document.getElementById('status').innerHTML =
+      '<span class="k">Status</span><span class="pill red">unreachable</span>';
+  }
+}
+
+async function doGitClone() {
+  const url = document.getElementById('git-url').value.trim();
+  const destination = document.getElementById('git-dest').value.trim();
+  const branch = document.getElementById('git-branch').value.trim() || undefined;
+  if (!url || !destination) { msg('git-msg', 'URL and destination are required', false); return; }
+  spin(true, 'Cloning repository…');
+  try {
+    const r = await post('api/git/clone', { url, destination, branch });
+    const out = document.getElementById('git-output');
+    out.textContent = r.data.output || '';
+    out.style.display = r.data.output ? 'block' : 'none';
+    msg('git-msg', r.ok ? `Cloned to ${r.data.destination}` : (r.data.error || 'Clone failed'), r.ok);
+  } catch (e) { msg('git-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function doTarCreate() {
+  const source = document.getElementById('tar-source').value.trim();
+  const destination = document.getElementById('tar-dest').value.trim();
+  const compress = document.getElementById('tar-compress').value === 'true';
+  if (!source || !destination) { msg('tar-create-msg', 'Source and destination are required', false); return; }
+  spin(true, 'Creating archive…');
+  try {
+    const r = await post('api/tar/create', { source, destination, compress });
+    msg('tar-create-msg', r.ok ? `Archive created: ${r.data.path}` : (r.data.error || 'Failed'), r.ok);
+  } catch (e) { msg('tar-create-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function doTarExtract() {
+  const archive = document.getElementById('tar-archive').value.trim();
+  const destination = document.getElementById('tar-extract-dest').value.trim();
+  if (!archive || !destination) { msg('tar-extract-msg', 'Archive and destination are required', false); return; }
+  spin(true, 'Extracting archive…');
+  try {
+    const r = await post('api/tar/extract', { archive, destination });
+    msg('tar-extract-msg', r.ok ? `Extracted to ${r.data.path}` : (r.data.error || 'Failed'), r.ok);
+  } catch (e) { msg('tar-extract-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function doEncrypt() {
+  const source = document.getElementById('enc-source').value.trim();
+  const destination = document.getElementById('enc-dest').value.trim();
+  const passphrase = document.getElementById('enc-pass').value;
+  if (!source || !destination || !passphrase) { msg('enc-msg', 'All fields are required', false); return; }
+  spin(true, 'Encrypting file…');
+  try {
+    const r = await post('api/encrypt/encrypt', { source, destination, passphrase });
+    msg('enc-msg', r.ok ? `Encrypted: ${r.data.destination} (${r.data.bytesWritten} bytes)` : (r.data.error || 'Failed'), r.ok);
+  } catch (e) { msg('enc-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function doDecrypt() {
+  const source = document.getElementById('dec-source').value.trim();
+  const destination = document.getElementById('dec-dest').value.trim();
+  const passphrase = document.getElementById('dec-pass').value;
+  if (!source || !destination || !passphrase) { msg('dec-msg', 'All fields are required', false); return; }
+  spin(true, 'Decrypting file…');
+  try {
+    const r = await post('api/encrypt/decrypt', { source, destination, passphrase });
+    msg('dec-msg', r.ok ? `Decrypted: ${r.data.destination} (${r.data.bytesWritten} bytes)` : (r.data.error || 'Failed'), r.ok);
+  } catch (e) { msg('dec-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+fetchStatus();
+setInterval(fetchStatus, 30000);
+</script>
+</body></html>
