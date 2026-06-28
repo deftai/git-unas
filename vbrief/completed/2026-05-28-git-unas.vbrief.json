@@ -6,7 +6,7 @@
   },
   "plan": {
     "title": "git-unas",
-    "status": "active",
+    "status": "completed",
     "narratives": {
       "Overview": "A Node.js/TypeScript web admin page for Ubiquiti UNAS devices that enables git repository cloning, tar archiving, and file encryption. Served via nginx proxy on UniFi OS with a dark-themed UI matching UniFi's aesthetic.",
       "Strategy": "speckit (Light path)"
