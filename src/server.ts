@@ -4,7 +4,9 @@ import { gitRouter } from './routes/git';
 import { tarRouter } from './routes/tar';
 import { encryptRouter } from './routes/encrypt';
 import { scheduleRouter } from './routes/schedule';
+import { archiveRouter } from './routes/archive';
 import { loadConfig, startScheduler } from './services/scheduleService';
+import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 7892;
@@ -16,6 +18,7 @@ app.use('/api/git', gitRouter);
 app.use('/api/tar', tarRouter);
 app.use('/api/encrypt', encryptRouter);
 app.use('/api/schedule', scheduleRouter);
+app.use('/api/archive', archiveRouter);
 
 // Health check
 app.get('/api/status', (_req, res) => {
@@ -31,8 +34,9 @@ app.get(/.*/, (_req, res) => {
 export { app };
 
 if (require.main === module) {
-  // Auto-start the scheduler from persisted config
+  // Auto-start schedulers from persisted config
   startScheduler(loadConfig());
+  startArchiveScheduler(loadArchiveConfig());
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`git-unas admin server listening on http://127.0.0.1:${PORT}`);
