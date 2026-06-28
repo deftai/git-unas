@@ -231,6 +231,9 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
     <option value="weekly">Weekly (Sun 02:00)</option>
     <option value="monthly">Monthly (1st 02:00)</option>
   </select></div>
+  <div class="row"><label>Retention (days)</label>
+  <input type="text" id="arch-retention" placeholder="30" style="width:60px;flex:none" maxlength="3">
+  <span style="font-size:12px;color:#9aa0a6">1–180 days</span></div>
   <div class="row"><label>Encrypt archives</label>
   <select id="arch-encrypt" onchange="document.getElementById('arch-pass-row').style.display=this.value==='true'?'flex':'none'">
     <option value="false">No</option>
@@ -273,6 +276,17 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
       <option value="weekly">Weekly</option>
       <option value="monthly">Monthly</option>
     </select></div>
+    <div class="row"><label>Retention</label>
+    <select id="add-repo-retention">
+      <option value="">Default</option>
+      <option value="1">1 day</option>
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+      <option value="30">30 days</option>
+      <option value="60">60 days</option>
+      <option value="90">90 days</option>
+      <option value="180">180 days</option>
+    </select></div>
     <div class="row"><button onclick="archAddRepo()">Add repo</button></div>
     <div class="msg" id="add-repo-msg"></div>
   </div>
@@ -293,6 +307,17 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
       <option value="daily">Daily</option>
       <option value="weekly">Weekly</option>
       <option value="monthly">Monthly</option>
+    </select></div>
+    <div class="row"><label>Retention</label>
+    <select id="add-org-retention">
+      <option value="">Default</option>
+      <option value="1">1 day</option>
+      <option value="7">7 days</option>
+      <option value="14">14 days</option>
+      <option value="30">30 days</option>
+      <option value="60">60 days</option>
+      <option value="90">90 days</option>
+      <option value="180">180 days</option>
     </select></div>
     <div style="font-size:12px;color:#9aa0a6;margin:6px 0 2px 0">Repos to include:</div>
     <div class="repo-check-list" id="org-repo-list"><span style="color:#5a6172">Load repos to see list.</span></div>
@@ -541,6 +566,7 @@ async function loadArchConfig() {
     document.getElementById('arch-token').value = _archConfig.githubToken || '';
     document.getElementById('arch-basedir').value = _archConfig.baseDir || '';
     document.getElementById('arch-freq').value = _archConfig.defaultFrequency || 'daily';
+    document.getElementById('arch-retention').value = String(_archConfig.retentionDays ?? 30);
     document.getElementById('arch-encrypt').value = String(!!_archConfig.encrypt);
     document.getElementById('arch-passphrase').value = _archConfig.passphrase || '';
     document.getElementById('arch-pass-row').style.display = _archConfig.encrypt ? 'flex' : 'none';
@@ -560,10 +586,15 @@ async function archValidateToken() {
 
 async function archSaveSettings() {
   const token = document.getElementById('arch-token').value;
+  const retentionDays = parseInt(document.getElementById('arch-retention').value, 10);
+  if (isNaN(retentionDays) || retentionDays < 1 || retentionDays > 180) {
+    msg('arch-settings-msg', 'Retention must be 1–180 days', false); return;
+  }
   const r = await post('api/archive/config', {
     githubToken: token,
     baseDir: document.getElementById('arch-basedir').value.trim(),
     defaultFrequency: document.getElementById('arch-freq').value,
+    retentionDays,
     encrypt: document.getElementById('arch-encrypt').value === 'true',
     passphrase: document.getElementById('arch-passphrase').value,
   });
@@ -587,13 +618,14 @@ async function loadArchStatus() {
         ? `${e.owner}/${e.repo}`
         : `${e.owner} (org, ${e.includeRepos.includes('*') ? 'all repos' : e.includeRepos.length + ' repos'})`;
       const freq = e.frequency ? freqLabel(e.frequency) : `default (${freqLabel(e.effectiveFrequency)})`;
+      const ret = e.retentionDays != null ? `${e.retentionDays}d` : `default (${_archConfig.retentionDays ?? 30}d)`;
       const nextRun = e.nextRun ? new Date(e.nextRun).toLocaleString() : '—';
       const lastMsg = e.lastMessage ? `<div style="color:#7a8190;font-size:11px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.lastMessage}">${e.lastMessage}</div>` : '';
       return `<div class="entry-row">
         <span class="entry-type ${e.type}">${e.type}</span>
         <div>
           <div class="entry-name">${label}</div>
-          <div class="entry-freq">${freq} · next: ${nextRun}</div>
+          <div class="entry-freq">${freq} · retain: ${ret} · next: ${nextRun}</div>
           ${lastMsg}
         </div>
         <span>${statusPill(e)}</span>
@@ -644,8 +676,10 @@ async function archAddRepo() {
   const owner = document.getElementById('add-repo-owner').value.trim();
   const repo = document.getElementById('add-repo-name').value.trim();
   const frequency = document.getElementById('add-repo-freq').value || null;
+  const retVal = document.getElementById('add-repo-retention').value;
+  const retentionDays = retVal ? parseInt(retVal, 10) : null;
   if (!owner || !repo) { msg('add-repo-msg', 'Owner and repo are required', false); return; }
-  const r = await post('api/archive/entries', { type: 'repo', owner, repo, frequency });
+  const r = await post('api/archive/entries', { type: 'repo', owner, repo, frequency, retentionDays });
   msg('add-repo-msg', r.ok ? `Added ${owner}/${repo}` : (r.data.error || 'Failed'), r.ok);
   if (r.ok) { document.getElementById('add-repo-owner').value = ''; document.getElementById('add-repo-name').value = ''; }
 }
@@ -692,12 +726,14 @@ async function archAddOrg() {
   const owner = document.getElementById('add-org-select').value;
   if (!owner) { msg('add-org-msg', 'Select an org first', false); return; }
   const frequency = document.getElementById('add-org-freq').value || null;
+  const retVal = document.getElementById('add-org-retention').value;
+  const retentionDays = retVal ? parseInt(retVal, 10) : null;
   const checked = Array.from(document.querySelectorAll('#org-repo-list input[type=checkbox]:checked'))
     .map(c => c.value);
   const all = document.querySelectorAll('#org-repo-list input[type=checkbox]').length;
   const includeRepos = checked.length === all ? ['*'] : checked;
   const r = await post('api/archive/entries', {
-    type: 'org', owner, includeRepos, excludeRepos: [], frequency,
+    type: 'org', owner, includeRepos, excludeRepos: [], frequency, retentionDays,
   });
   msg('add-org-msg', r.ok ? `Added org ${owner} (${includeRepos.includes('*') ? 'all' : includeRepos.length} repos)` : (r.data.error || 'Failed'), r.ok);
 }

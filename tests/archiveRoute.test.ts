@@ -6,7 +6,7 @@ import request from 'supertest';
 jest.mock('../src/services/archiveService', () => ({
   loadArchiveConfig: jest.fn().mockReturnValue({
     githubToken: 'tok', baseDir: '/arc', defaultFrequency: 'daily',
-    encrypt: false, passphrase: '', entries: [],
+    retentionDays: 30, encrypt: false, passphrase: '', entries: [],
   }),
   saveArchiveConfig: jest.fn(),
   maskedConfig: jest.fn((c) => ({ ...c, githubToken: c.githubToken ? '***' : '', passphrase: c.passphrase ? '***' : '' })),
@@ -54,7 +54,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockLoadArchiveConfig.mockReturnValue({
     githubToken: 'tok', baseDir: '/arc', defaultFrequency: 'daily',
-    encrypt: false, passphrase: '', entries: [],
+    retentionDays: 30, encrypt: false, passphrase: '', entries: [],
   });
   mockNewEntryId.mockReturnValue('uuid-1234');
 });
@@ -167,8 +167,8 @@ describe('GET /api/archive/status', () => {
   it('returns entries with nextRun', async () => {
     mockLoadArchiveConfig.mockReturnValue({
       githubToken: 'tok', baseDir: '/arc', defaultFrequency: 'daily',
-      encrypt: false, passphrase: '',
-      entries: [{ id: 'e1', type: 'repo', owner: 'acme', repo: 'api', includeRepos: [], excludeRepos: [], frequency: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null }],
+      encrypt: false, passphrase: '', retentionDays: 30,
+      entries: [{ id: 'e1', type: 'repo', owner: 'acme', repo: 'api', includeRepos: [], excludeRepos: [], frequency: null, retentionDays: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null }],
     });
     const app = await getApp();
     const res = await request(app).get('/api/archive/status');
@@ -237,7 +237,7 @@ describe('PATCH /api/archive/entries/:id', () => {
   });
 
   it('updates the entry and restarts scheduler', async () => {
-    const entry = { id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null };
+    const entry = { id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, retentionDays: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null };
     const cfg = { ...mockLoadArchiveConfig(), entries: [entry] };
     mockLoadArchiveConfig.mockReturnValue(cfg as any);
     const app = await getApp();
@@ -260,7 +260,7 @@ describe('DELETE /api/archive/entries/:id', () => {
   });
 
   it('removes entry and saves config', async () => {
-    const entry = { id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null };
+    const entry = { id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, retentionDays: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null };
     const cfg = { ...mockLoadArchiveConfig(), entries: [entry] };
     mockLoadArchiveConfig.mockReturnValue(cfg as any);
     const app = await getApp();
@@ -290,7 +290,7 @@ describe('POST /api/archive/run/:id', () => {
   it('calls runEntryNow with the correct id', async () => {
     mockLoadArchiveConfig.mockReturnValue({
       ...mockLoadArchiveConfig(),
-      entries: [{ id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null }],
+      entries: [{ id: 'e1', type: 'repo', owner: 'x', repo: 'y', includeRepos: [], excludeRepos: [], frequency: null, retentionDays: null, enabled: true, lastRun: null, lastStatus: null, lastMessage: null }],
     } as any);
     const app = await getApp();
     const res = await request(app).post('/api/archive/run/e1').send({});

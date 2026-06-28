@@ -45,6 +45,12 @@ archiveRouter.post('/config', (req: Request, res: Response) => {
     return;
   }
 
+  const retentionDays = body.retentionDays !== undefined ? Number(body.retentionDays) : current.retentionDays;
+  if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 180) {
+    res.status(400).json({ error: 'retentionDays must be an integer between 1 and 180' });
+    return;
+  }
+
   const updated: ArchiveConfig = {
     githubToken:
       body.githubToken === '***' || body.githubToken === undefined
@@ -56,6 +62,7 @@ archiveRouter.post('/config', (req: Request, res: Response) => {
         : body.passphrase,
     baseDir: typeof body.baseDir === 'string' ? body.baseDir : current.baseDir,
     defaultFrequency: freq,
+    retentionDays,
     encrypt: typeof body.encrypt === 'boolean' ? body.encrypt : current.encrypt,
     entries: Array.isArray(body.entries) ? body.entries : current.entries,
   };
@@ -150,6 +157,16 @@ archiveRouter.post('/entries', (req: Request, res: Response) => {
     return;
   }
 
+  let entryRetention: number | null = null;
+  if (body.retentionDays !== undefined && body.retentionDays !== null) {
+    const r = Number(body.retentionDays);
+    if (!Number.isInteger(r) || r < 1 || r > 180) {
+      res.status(400).json({ error: 'retentionDays must be an integer between 1 and 180' });
+      return;
+    }
+    entryRetention = r;
+  }
+
   const config = loadArchiveConfig();
   const entry: ArchiveEntry = {
     id: newEntryId(),
@@ -159,6 +176,7 @@ archiveRouter.post('/entries', (req: Request, res: Response) => {
     includeRepos: body.includeRepos ?? ['*'],
     excludeRepos: body.excludeRepos ?? [],
     frequency: body.frequency ?? null,
+    retentionDays: entryRetention,
     enabled: body.enabled ?? true,
     lastRun: null,
     lastStatus: null,

@@ -26,6 +26,8 @@ export interface ArchiveEntry {
   excludeRepos: string[];
   /** null → use config.defaultFrequency */
   frequency: Frequency | null;
+  /** null → use config.retentionDays */
+  retentionDays: number | null;
   enabled: boolean;
   lastRun: string | null;
   lastStatus: 'ok' | 'error' | null;
@@ -36,6 +38,8 @@ export interface ArchiveConfig {
   githubToken: string;
   baseDir: string;
   defaultFrequency: Frequency;
+  /** How many days to retain archive files. 1–180. */
+  retentionDays: number;
   encrypt: boolean;
   passphrase: string;
   entries: ArchiveEntry[];
@@ -53,6 +57,7 @@ const DEFAULT_CONFIG: ArchiveConfig = {
   githubToken: '',
   baseDir: '',
   defaultFrequency: 'daily',
+  retentionDays: 30,
   encrypt: false,
   passphrase: '',
   entries: [],
@@ -133,6 +138,53 @@ export function nextRunDate(freq: Frequency): Date | null {
 }
 
 // ---------------------------------------------------------------------------
+// Retention / pruning
+// ---------------------------------------------------------------------------
+
+// Matches: owner__repo__YYYY-MM-DD_HH-MM-SS.tar.gz  or  ...tar.gz.unas
+const ARCHIVE_FILE_RE = /^(.+)__(.+)__(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}\.tar\.gz(\.unas)?$/;
+
+/**
+ * Parse the date embedded in an archive filename.
+ * Returns null if the filename doesn't match the expected pattern.
+ */
+export function parseDateFromFilename(filename: string): Date | null {
+  const m = ARCHIVE_FILE_RE.exec(filename);
+  if (!m) return null;
+  const [, , , dateStr] = m; // YYYY-MM-DD
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Delete archive files for owner/repo that are older than retentionDays.
+ * Best-effort: individual delete failures are silently ignored.
+ */
+export function pruneOldArchives(
+  owner: string,
+  repo: string,
+  baseDir: string,
+  retentionDays: number,
+): void {
+  if (!baseDir || !fs.existsSync(baseDir)) return;
+
+  const prefix = `${owner}__${repo}__`;
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+
+  const files = fs.readdirSync(baseDir).filter((f) => f.startsWith(prefix));
+  for (const file of files) {
+    const fileDate = parseDateFromFilename(file);
+    if (fileDate && fileDate.getTime() < cutoff) {
+      try {
+        fs.unlinkSync(path.join(baseDir, file));
+      } catch {
+        // best-effort
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Archive operations
 // ---------------------------------------------------------------------------
 
@@ -156,13 +208,14 @@ function runCommand(cmd: string, args: string[], cwd?: string): Promise<string> 
 
 /**
  * Archive a single repository.
- * Process: git clone --mirror → tar.gz → optional encrypt → rm clone dir
+ * Process: git clone --mirror → tar.gz → optional encrypt → rm clone dir → prune old
  * Archive filename: <owner>__<repo>__<timestamp>.tar.gz[.unas]
  */
 export async function archiveRepo(
   owner: string,
   repo: string,
   config: ArchiveConfig,
+  retentionOverride?: number,
 ): Promise<string> {
   if (!config.baseDir) throw new Error('baseDir is not configured');
 
@@ -184,6 +237,9 @@ export async function archiveRepo(
     const tarPath = path.join(config.baseDir, tarName);
 
     await runCommand('tar', ['-czf', tarPath, '-C', tmpDir, `${repo}.git`]);
+
+    const retention = retentionOverride ?? config.retentionDays;
+    pruneOldArchives(owner, repo, config.baseDir, retention);
 
     if (config.encrypt && config.passphrase) {
       const encPath = `${tarPath}.unas`;
@@ -220,7 +276,8 @@ export async function archiveOrgEntry(
 
   for (const r of repos) {
     try {
-      const dest = await archiveRepo(entry.owner, r.name, config);
+      const retention = entry.retentionDays ?? config.retentionDays;
+      const dest = await archiveRepo(entry.owner, r.name, config, retention);
       results.push({ repo: r.name, status: 'ok', message: dest });
     } catch (err) {
       results.push({
@@ -258,7 +315,8 @@ function updateEntryStatus(
 async function runEntry(entry: ArchiveEntry, config: ArchiveConfig): Promise<void> {
   try {
     if (entry.type === 'repo') {
-      const dest = await archiveRepo(entry.owner, entry.repo!, config);
+      const retention = entry.retentionDays ?? config.retentionDays;
+      const dest = await archiveRepo(entry.owner, entry.repo!, config, retention);
       updateEntryStatus(entry.id, 'ok', dest);
     } else {
       const results = await archiveOrgEntry(entry, config);

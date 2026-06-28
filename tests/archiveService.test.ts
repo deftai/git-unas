@@ -104,7 +104,7 @@ describe('maskedConfig', () => {
     const { maskedConfig } = await imp();
     const masked = maskedConfig({
       githubToken: 'realtoken', passphrase: 'secret',
-      baseDir: '/a', defaultFrequency: 'daily', encrypt: false, entries: [],
+      baseDir: '/a', defaultFrequency: 'daily', retentionDays: 30, encrypt: false, entries: [],
     });
     expect(masked.githubToken).toBe('***');
     expect(masked.passphrase).toBe('***');
@@ -114,7 +114,7 @@ describe('maskedConfig', () => {
     const { maskedConfig } = await imp();
     const masked = maskedConfig({
       githubToken: '', passphrase: '',
-      baseDir: '/a', defaultFrequency: 'daily', encrypt: false, entries: [],
+      baseDir: '/a', defaultFrequency: 'daily', retentionDays: 30, encrypt: false, entries: [],
     });
     expect(masked.githubToken).toBe('');
     expect(masked.passphrase).toBe('');
@@ -196,6 +196,112 @@ describe('newEntryId', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseDateFromFilename
+// ---------------------------------------------------------------------------
+
+describe('parseDateFromFilename', () => {
+  it('parses a valid archive filename', async () => {
+    const { parseDateFromFilename } = await imp();
+    const d = parseDateFromFilename('acme__backend__2026-06-01_02-00-00.tar.gz');
+    expect(d).not.toBeNull();
+    expect(d!.getUTCFullYear()).toBe(2026);
+    expect(d!.getUTCMonth()).toBe(5); // June = 5
+    expect(d!.getUTCDate()).toBe(1);
+  });
+
+  it('parses an encrypted archive filename (.tar.gz.unas)', async () => {
+    const { parseDateFromFilename } = await imp();
+    const d = parseDateFromFilename('org__repo__2025-12-31_23-59-59.tar.gz.unas');
+    expect(d).not.toBeNull();
+    expect(d!.getUTCFullYear()).toBe(2025);
+  });
+
+  it('returns null for unrecognised filenames', async () => {
+    const { parseDateFromFilename } = await imp();
+    expect(parseDateFromFilename('random.txt')).toBeNull();
+    expect(parseDateFromFilename('backup-2026-05-28_06-00-00.tar.gz')).toBeNull();
+    expect(parseDateFromFilename('acme__backend.tar.gz')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pruneOldArchives
+// ---------------------------------------------------------------------------
+
+describe('pruneOldArchives', () => {
+  it('is a no-op when baseDir does not exist', async () => {
+    const { pruneOldArchives } = await imp();
+    expect(() => pruneOldArchives('owner', 'repo', '/nonexistent/dir', 30)).not.toThrow();
+  });
+
+  it('deletes files older than retentionDays', async () => {
+    const { pruneOldArchives } = await imp();
+
+    // Create an archive file with a date 60 days ago
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const y = sixtyDaysAgo.getUTCFullYear();
+    const m = String(sixtyDaysAgo.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(sixtyDaysAgo.getUTCDate()).padStart(2, '0');
+    const oldFile = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
+    fs.writeFileSync(path.join(tmpDir, oldFile), 'old');
+
+    pruneOldArchives('owner', 'repo', tmpDir, 30); // 30-day retention
+
+    expect(fs.existsSync(path.join(tmpDir, oldFile))).toBe(false);
+  });
+
+  it('keeps files within retentionDays', async () => {
+    const { pruneOldArchives } = await imp();
+
+    // Create a file dated yesterday
+    const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+    const y = yesterday.getUTCFullYear();
+    const m = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(yesterday.getUTCDate()).padStart(2, '0');
+    const recentFile = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
+    fs.writeFileSync(path.join(tmpDir, recentFile), 'recent');
+
+    pruneOldArchives('owner', 'repo', tmpDir, 30);
+
+    expect(fs.existsSync(path.join(tmpDir, recentFile))).toBe(true);
+  });
+
+  it('only affects files matching the owner__repo__ prefix', async () => {
+    const { pruneOldArchives } = await imp();
+
+    // Old file for a different owner/repo — should NOT be deleted
+    const oldDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const y = oldDate.getUTCFullYear();
+    const m = String(oldDate.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(oldDate.getUTCDate()).padStart(2, '0');
+    const otherFile = `other__project__${y}-${m}-${d}_02-00-00.tar.gz`;
+    fs.writeFileSync(path.join(tmpDir, otherFile), 'other');
+
+    pruneOldArchives('owner', 'repo', tmpDir, 30);
+
+    expect(fs.existsSync(path.join(tmpDir, otherFile))).toBe(true);
+  });
+
+  it('deletes both .tar.gz and .tar.gz.unas files past retention', async () => {
+    const { pruneOldArchives } = await imp();
+
+    const oldDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+    const y = oldDate.getUTCFullYear();
+    const m = String(oldDate.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(oldDate.getUTCDate()).padStart(2, '0');
+    const tarFile  = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
+    const unasFile = `owner__repo__${y}-${m}-${d}_03-00-00.tar.gz.unas`;
+    fs.writeFileSync(path.join(tmpDir, tarFile),  'tar');
+    fs.writeFileSync(path.join(tmpDir, unasFile), 'unas');
+
+    pruneOldArchives('owner', 'repo', tmpDir, 30);
+
+    expect(fs.existsSync(path.join(tmpDir, tarFile))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, unasFile))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // archiveRepo
 // ---------------------------------------------------------------------------
 
@@ -247,7 +353,7 @@ describe('startArchiveScheduler / stopArchiveScheduler', () => {
     expect(() =>
       startArchiveScheduler({
         githubToken: 'tok', baseDir: tmpDir, defaultFrequency: 'daily',
-        encrypt: false, passphrase: '', entries: [],
+        retentionDays: 30, encrypt: false, passphrase: '', entries: [],
       }),
     ).not.toThrow();
     stopArchiveScheduler();
