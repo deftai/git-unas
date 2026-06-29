@@ -321,9 +321,53 @@ export async function archiveOrgEntry(
 
   // Prune run folders beyond retention.
   pruneOldRunDirs(config.baseDir, retention);
-  completeProgress();
+  const errorRepos = results.filter((r) => r.status === 'error').map((r) => r.repo);
+  completeProgress(runDir, errorRepos);
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Run history
+// ---------------------------------------------------------------------------
+
+export interface RunRecord {
+  id: string;
+  entryId: string;
+  label: string;
+  runDir: string;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  total: number;
+  succeeded: number;
+  errors: number;
+  errorRepos: string[];
+  status: 'ok' | 'partial' | 'failed';
+}
+
+const RUNS_PATH =
+  process.env.ARCHIVE_RUNS_PATH ??
+  path.join(process.cwd(), 'config', 'archive-runs.json');
+
+const MAX_RUNS = 200;
+
+export function loadRunHistory(): RunRecord[] {
+  try {
+    if (fs.existsSync(RUNS_PATH)) {
+      return JSON.parse(fs.readFileSync(RUNS_PATH, 'utf8')) as RunRecord[];
+    }
+  } catch { /* fall through */ }
+  return [];
+}
+
+function saveRunRecord(record: RunRecord): void {
+  const dir = path.dirname(RUNS_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const existing = loadRunHistory();
+  existing.unshift(record); // newest first
+  if (existing.length > MAX_RUNS) existing.length = MAX_RUNS;
+  fs.writeFileSync(RUNS_PATH, JSON.stringify(existing, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -358,8 +402,30 @@ function advanceProgress(repo: string, isError: boolean): void {
   if (isError) _progress.errors += 1;
 }
 
-function completeProgress(): void {
-  if (_progress) _progress.done = true;
+function completeProgress(runDir?: string, errorRepos?: string[]): void {
+  if (!_progress) return;
+  _progress.done = true;
+  // Persist the completed run to history.
+  const now = new Date().toISOString();
+  const startMs = new Date(_progress.startedAt).getTime();
+  const errors = _progress.errors;
+  const total = _progress.total;
+  const succeeded = total - errors;
+  const record: RunRecord = {
+    id: crypto.randomUUID(),
+    entryId: _progress.entryId,
+    label: _progress.label,
+    runDir: runDir ?? '',
+    startedAt: _progress.startedAt,
+    completedAt: now,
+    durationMs: Date.now() - startMs,
+    total,
+    succeeded,
+    errors,
+    errorRepos: errorRepos ?? [],
+    status: errors === 0 ? 'ok' : succeeded === 0 ? 'failed' : 'partial',
+  };
+  saveRunRecord(record);
 }
 
 // ---------------------------------------------------------------------------
@@ -393,7 +459,7 @@ async function runEntry(entry: ArchiveEntry, config: ArchiveConfig): Promise<voi
       const dest = await archiveRepo(entry.owner, entry.repo!, config, retention, runDir);
       pruneOldRunDirs(config.baseDir, retention);
       advanceProgress(entry.repo!, false);
-      completeProgress();
+      completeProgress(runDir, []);
       updateEntryStatus(entry.id, 'ok', dest);
     } else {
       const results = await archiveOrgEntry(entry, config);

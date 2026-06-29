@@ -11,3 +11,6 @@ SCHEDULE_CONFIG_PATH=/etc/git-unas/schedule.json
 
 # GitHub archive config file location
 ARCHIVE_CONFIG_PATH=/etc/git-unas/archive-config.json
+
+# GitHub archive run history log
+ARCHIVE_RUNS_PATH=/etc/git-unas/archive-runs.json

@@ -9,6 +9,7 @@ import {
   newEntryId,
   nextRunDate,
   getArchiveProgress,
+  loadRunHistory,
   type ArchiveEntry,
   type ArchiveConfig,
   type Frequency,
@@ -223,6 +224,13 @@ archiveRouter.delete('/entries/:id', (req: Request, res: Response) => {
   saveArchiveConfig(config);
   startArchiveScheduler(config);
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/archive/runs  — completed run history (newest first, max 200)
+// ---------------------------------------------------------------------------
+archiveRouter.get('/runs', (_req: Request, res: Response) => {
+  res.json(loadRunHistory());
 });
 
 // ---------------------------------------------------------------------------

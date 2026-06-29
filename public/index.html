@@ -69,6 +69,13 @@ border-radius:4px;padding:6px;margin:6px 0}
 .repo-check-row{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px}
 .repo-check-row input{flex:none}
 .repo-check-row label{color:#c6c9cc;cursor:pointer}
+.run-table{font-size:12px;width:100%;border-collapse:collapse;margin-top:6px}
+.run-table th{color:#7a8190;font-weight:400;text-align:left;padding:4px 6px;border-bottom:1px solid #1e2535;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.run-table td{padding:5px 6px;border-bottom:1px solid #1a1f2b;color:#c6c9cc;vertical-align:middle}
+.run-table tr:last-child td{border-bottom:0}
+.run-table tr:hover td{background:#1e2535}
+.pill.partial{background:#3a2a1a;color:#e0c290}
+.pill.failed{background:#3a1a1a;color:#e0a0a0}
 .progress-wrap{margin:10px 0 4px 0;display:none}
 .progress-wrap.on{display:block}
 .progress-bar-bg{background:#1e2535;border-radius:4px;height:8px;overflow:hidden;margin:6px 0 4px 0}
@@ -217,6 +224,7 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
   <button class="tab-btn active" onclick="archTab('settings',this)">Settings</button>
   <button class="tab-btn" onclick="archTab('entries',this)">Archive entries</button>
   <button class="tab-btn" onclick="archTab('add',this)">+ Add</button>
+  <button class="tab-btn" onclick="archTab('history',this)">History</button>
 </div>
 
 <!-- Settings tab -->
@@ -267,6 +275,24 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
   </div>
   <div class="entry-list" id="arch-entries"><span style="color:#5a6172">No entries yet.</span></div>
   <div class="msg" id="arch-entries-msg"></div>
+</div>
+
+<!-- History tab -->
+<div class="tab-pane" id="arch-tab-history">
+  <div class="row" style="justify-content:space-between;margin-bottom:4px">
+    <span style="font-size:12px;color:#9aa0a6" id="arch-history-count">Loading…</span>
+    <button onclick="loadArchHistory()" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">↻ Refresh</button>
+  </div>
+  <div id="arch-history-wrap">
+    <table class="run-table">
+      <thead><tr>
+        <th>Date</th><th>Label</th><th>Repos</th><th>Duration</th><th>Status</th>
+      </tr></thead>
+      <tbody id="arch-history-body">
+        <tr><td colspan="5" style="color:#5a6172">No runs recorded yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <!-- Add tab -->
@@ -550,13 +576,14 @@ setInterval(loadSchedule, 30000);
 let _archConfig = {};
 
 function archTab(name, btn) {
-  document.querySelectorAll('#arch-tab-settings,#arch-tab-entries,#arch-tab-add')
+  document.querySelectorAll('#arch-tab-settings,#arch-tab-entries,#arch-tab-add,#arch-tab-history')
     .forEach(p => p.classList.remove('active'));
   document.getElementById('arch-tab-' + name).classList.add('active');
   btn.closest('.tab-bar').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   if (name === 'entries') loadArchStatus();
   if (name === 'add') archLoadOrgs();
+  if (name === 'history') loadArchHistory();
 }
 function addTab(name, btn) {
   document.querySelectorAll('#add-tab-repo,#add-tab-org').forEach(p => p.classList.remove('active'));
@@ -794,6 +821,45 @@ async function archAddOrg() {
     type: 'org', owner, includeRepos, excludeRepos: [], frequency, retentionDays,
   });
   msg('add-org-msg', r.ok ? `Added org ${owner} (${includeRepos.includes('*') ? 'all' : includeRepos.length} repos)` : (r.data.error || 'Failed'), r.ok);
+}
+
+function fmtDuration(ms) {
+  if (ms < 60000) return Math.round(ms / 1000) + 's';
+  const m = Math.floor(ms / 60000);
+  const s = Math.round((ms % 60000) / 1000);
+  return m + 'm ' + s + 's';
+}
+
+async function loadArchHistory() {
+  try {
+    const r = await fetch('api/archive/runs');
+    const runs = await r.json();
+    const tbody = document.getElementById('arch-history-body');
+    document.getElementById('arch-history-count').textContent =
+      `${runs.length} run${runs.length !== 1 ? 's' : ''} recorded`;
+    if (!runs.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#5a6172">No runs recorded yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = runs.map(r => {
+      const date = new Date(r.startedAt).toLocaleString();
+      const statusPillClass = r.status === 'ok' ? 'green' : r.status === 'partial' ? 'amber' : 'red';
+      const repoCount = r.errors > 0
+        ? `<span style="color:#a0e0a0">${r.succeeded}</span> / <span style="color:#e0a0a0">${r.total}</span>`
+        : `${r.total}`;
+      const errTitle = r.errorRepos.length ? ` title="Errors: ${r.errorRepos.join(', ')}"` : '';
+      return `<tr>
+        <td style="white-space:nowrap;color:#9aa0a6">${date}</td>
+        <td>${r.label}</td>
+        <td${errTitle}>${repoCount}${r.errors ? ' <span style="color:#e0a0a0;font-size:11px">(' + r.errors + ' err)</span>' : ''}</td>
+        <td style="color:#9aa0a6;white-space:nowrap">${fmtDuration(r.durationMs)}</td>
+        <td><span class="pill ${statusPillClass}">${r.status}</span></td>
+      </tr>`;
+    }).join('');
+  } catch {
+    document.getElementById('arch-history-body').innerHTML =
+      '<tr><td colspan="5" style="color:#e0a0a0">Failed to load history.</td></tr>';
+  }
 }
 
 loadArchConfig();
