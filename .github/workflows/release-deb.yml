@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm  # native ARM64 — eliminates x86→arm64 cross-compilation
 
     steps:
       - name: Checkout
@@ -30,8 +30,7 @@ jobs:
 
       - name: Build ARM64 binary
         run: |
-          # --no-bytecode: V8 bytecode generation fails when cross-compiling x86→arm64;
-          # bundling JS source instead works correctly on the target device.
+          # Running natively on arm64 — pkg generates V8 bytecode directly.
           npm run build:binary
 
       - name: Extract version
