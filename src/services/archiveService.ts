@@ -138,6 +138,74 @@ export function nextRunDate(freq: Frequency): Date | null {
 }
 
 // ---------------------------------------------------------------------------
+// Archive cache — tracks last pushed_at per repo to enable symlink shortcuts
+// ---------------------------------------------------------------------------
+
+interface CacheEntry {
+  /** pushed_at value when this repo was last fully archived. */
+  pushedAt: string;
+  /** Absolute path of the real archive file (not a symlink). */
+  archivePath: string;
+}
+
+type ArchiveCache = Record<string, CacheEntry>; // key: "owner/repo"
+
+const CACHE_PATH =
+  process.env.ARCHIVE_CACHE_PATH ??
+  path.join(process.cwd(), 'config', 'archive-cache.json');
+
+export function loadArchiveCache(): ArchiveCache {
+  try {
+    if (fs.existsSync(CACHE_PATH)) {
+      return JSON.parse(fs.readFileSync(CACHE_PATH, 'utf8')) as ArchiveCache;
+    }
+  } catch { /* fall through */ }
+  return {};
+}
+
+function saveArchiveCache(cache: ArchiveCache): void {
+  const dir = path.dirname(CACHE_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(CACHE_PATH, JSON.stringify(cache, null, 2));
+}
+
+/**
+ * Invalidate cache entries whose archivePath lives inside deletedDir.
+ * Called after pruning so the next run re-archives those repos rather
+ * than trying to symlink to a deleted file.
+ */
+function invalidateCacheForDir(deletedDir: string, cache: ArchiveCache): boolean {
+  let changed = false;
+  for (const key of Object.keys(cache)) {
+    if (cache[key].archivePath.startsWith(deletedDir + path.sep)) {
+      delete cache[key];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Create a relative symlink in runDir pointing to prevArchivePath.
+ * Returns the symlink path.
+ */
+export function symlinkRepo(
+  prevArchivePath: string,
+  runDir: string,
+  filename: string,
+): string {
+  const linkPath = path.join(runDir, filename);
+  const relTarget = path.relative(runDir, prevArchivePath);
+  try {
+    fs.symlinkSync(relTarget, linkPath);
+  } catch (err: unknown) {
+    // If symlink fails (e.g. cross-filesystem), fall through — caller will do full archive.
+    throw err;
+  }
+  return linkPath;
+}
+
+// ---------------------------------------------------------------------------
 // Retention / pruning
 // ---------------------------------------------------------------------------
 
@@ -177,16 +245,23 @@ export function pruneOldRunDirs(baseDir: string, retentionDays: number): void {
   if (!baseDir || !fs.existsSync(baseDir)) return;
 
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const cache = loadArchiveCache();
+  let cacheChanged = false;
 
-  // Prune dated run folders.
   const entries = fs.readdirSync(baseDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const d = parseDateFromRunDir(entry.name);
     if (d && d.getTime() < cutoff) {
-      try { fs.rmSync(path.join(baseDir, entry.name), { recursive: true, force: true }); } catch { /* best-effort */ }
+      const dirPath = path.join(baseDir, entry.name);
+      // Invalidate any cache entries pointing into this folder so the next
+      // run re-archives instead of symlinking to a deleted file.
+      if (invalidateCacheForDir(dirPath, cache)) cacheChanged = true;
+      try { fs.rmSync(dirPath, { recursive: true, force: true }); } catch { /* best-effort */ }
     }
   }
+
+  if (cacheChanged) saveArchiveCache(cache);
 }
 
 // Keep the old function for backward compat / tests.
@@ -281,7 +356,7 @@ export async function archiveRepo(
 export async function archiveOrgEntry(
   entry: ArchiveEntry,
   config: ArchiveConfig,
-): Promise<{ repo: string; status: 'ok' | 'error'; message: string }[]> {
+): Promise<{ repo: string; status: 'ok' | 'error' | 'skipped'; message: string }[]> {
   if (entry.type !== 'org') throw new Error('entry is not type=org');
 
   const allRepos = await listOrgRepos(config.githubToken, entry.owner);
@@ -293,20 +368,43 @@ export async function archiveOrgEntry(
     .filter((r) => includeAll || entry.includeRepos.includes(r.name))
     .filter((r) => !entry.excludeRepos.includes(r.name));
 
-  const results: { repo: string; status: 'ok' | 'error'; message: string }[] = [];
+  const results: { repo: string; status: 'ok' | 'error' | 'skipped'; message: string }[] = [];
   startProgress(entry.id, `${entry.owner} (org)`, repos.length);
 
   // All repos in this org run share one timestamped folder prefixed with the org name.
   if (!fs.existsSync(config.baseDir)) fs.mkdirSync(config.baseDir, { recursive: true });
   const runDir = makeRunDir(config.baseDir, entry.owner);
   const retention = entry.retentionDays ?? config.retentionDays;
+  const cache = loadArchiveCache();
+  let cacheChanged = false;
 
   for (const r of repos) {
-    // Update the displayed repo name before starting so the UI shows activity
-    // even while the clone is running (which can take minutes for large repos).
     if (_progress) _progress.currentRepo = r.name;
+    const cacheKey = `${entry.owner}/${r.name}`;
+    const cached = cache[cacheKey];
+    const archiveFilename = `${entry.owner}__${r.name}${config.encrypt ? '.tar.gz.unas' : '.tar.gz'}`;
+
+    // --- Symlink shortcut: repo hasn't changed since last archive ---
+    if (
+      cached &&
+      cached.pushedAt === r.pushed_at &&
+      fs.existsSync(cached.archivePath)
+    ) {
+      try {
+        const linkPath = symlinkRepo(cached.archivePath, runDir, archiveFilename);
+        skipProgress(r.name);
+        results.push({ repo: r.name, status: 'skipped', message: linkPath });
+        continue;
+      } catch {
+        // Symlink failed (cross-filesystem, etc.) — fall through to full archive.
+      }
+    }
+
+    // --- Full archive ---
     try {
       const dest = await archiveRepo(entry.owner, r.name, config, retention, runDir);
+      cache[cacheKey] = { pushedAt: r.pushed_at, archivePath: dest };
+      cacheChanged = true;
       advanceProgress(r.name, false);
       results.push({ repo: r.name, status: 'ok', message: dest });
     } catch (err) {
@@ -319,7 +417,9 @@ export async function archiveOrgEntry(
     }
   }
 
-  // Prune run folders beyond retention.
+  if (cacheChanged) saveArchiveCache(cache);
+
+  // Prune run folders beyond retention (also invalidates stale cache entries).
   pruneOldRunDirs(config.baseDir, retention);
   const errorRepos = results.filter((r) => r.status === 'error').map((r) => r.repo);
   completeProgress(runDir, errorRepos);
@@ -341,6 +441,7 @@ export interface RunRecord {
   durationMs: number;
   total: number;
   succeeded: number;
+  skipped: number;
   errors: number;
   errorRepos: string[];
   status: 'ok' | 'partial' | 'failed';
@@ -381,6 +482,7 @@ export interface ArchiveProgress {
   total: number;
   currentRepo: string;
   errors: number;
+  skipped: number;
   done: boolean;
   startedAt: string;
 }
@@ -392,7 +494,7 @@ export function getArchiveProgress(): ArchiveProgress | null {
 }
 
 function startProgress(entryId: string, label: string, total: number): void {
-  _progress = { entryId, label, current: 0, total, currentRepo: '', errors: 0, done: false, startedAt: new Date().toISOString() };
+  _progress = { entryId, label, current: 0, total, currentRepo: '', errors: 0, skipped: 0, done: false, startedAt: new Date().toISOString() };
 }
 
 function advanceProgress(repo: string, isError: boolean): void {
@@ -402,6 +504,12 @@ function advanceProgress(repo: string, isError: boolean): void {
   if (isError) _progress.errors += 1;
 }
 
+function skipProgress(repo: string): void {
+  if (!_progress) return;
+  _progress.skipped += 1;
+  _progress.currentRepo = repo;
+}
+
 function completeProgress(runDir?: string, errorRepos?: string[]): void {
   if (!_progress) return;
   _progress.done = true;
@@ -409,8 +517,9 @@ function completeProgress(runDir?: string, errorRepos?: string[]): void {
   const now = new Date().toISOString();
   const startMs = new Date(_progress.startedAt).getTime();
   const errors = _progress.errors;
+  const skipped = _progress.skipped;
   const total = _progress.total;
-  const succeeded = total - errors;
+  const succeeded = total - errors - skipped;
   const record: RunRecord = {
     id: crypto.randomUUID(),
     entryId: _progress.entryId,
@@ -421,6 +530,7 @@ function completeProgress(runDir?: string, errorRepos?: string[]): void {
     durationMs: Date.now() - startMs,
     total,
     succeeded,
+    skipped,
     errors,
     errorRepos: errorRepos ?? [],
     status: errors === 0 ? 'ok' : succeeded === 0 ? 'failed' : 'partial',

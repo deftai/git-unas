@@ -712,9 +712,12 @@ function startProgressPolling() {
       const pc = Math.round((done / total) * 100);
       fill.style.width = pc + '%';
       pct.textContent = pc + '%';
-      label.textContent = `Archiving ${p.label} (${done}/${total} repos${p.errors ? ', ' + p.errors + ' errors' : ''})`;
+      const skipped = p.skipped || 0;
+      const archived = done - skipped;
+      const skipNote = skipped ? `, ${skipped} symlinked` : '';
+      label.textContent = `Archiving ${p.label} (${archived}/${total} repos${skipNote}${p.errors ? ', ' + p.errors + ' errors' : ''})`;
       sub.textContent = p.currentRepo
-        ? `${done === 0 ? 'Cloning' : 'Done, next:'} ${p.currentRepo}` : 'Starting…';
+        ? `${(done - skipped) === 0 && skipped === 0 ? 'Cloning' : skipped > 0 && archived === 0 ? 'Linking (unchanged)' : 'Cloning'} ${p.currentRepo}` : 'Starting…';
       if (p.done) {
         clearInterval(_progressPoll);
         wrap.classList.remove('on');
@@ -844,14 +847,15 @@ async function loadArchHistory() {
     tbody.innerHTML = runs.map(r => {
       const date = new Date(r.startedAt).toLocaleString();
       const statusPillClass = r.status === 'ok' ? 'green' : r.status === 'partial' ? 'amber' : 'red';
+      const skipNote = r.skipped ? ` <span style="color:#7a8190;font-size:11px">(${r.skipped} ↻)</span>` : '';
       const repoCount = r.errors > 0
-        ? `<span style="color:#a0e0a0">${r.succeeded}</span> / <span style="color:#e0a0a0">${r.total}</span>`
-        : `${r.total}`;
+        ? `<span style="color:#a0e0a0">${r.succeeded}</span>/<span style="color:#e0a0a0">${r.total}</span>`
+        : `${r.succeeded}`;
       const errTitle = r.errorRepos.length ? ` title="Errors: ${r.errorRepos.join(', ')}"` : '';
       return `<tr>
         <td style="white-space:nowrap;color:#9aa0a6">${date}</td>
         <td>${r.label}</td>
-        <td${errTitle}>${repoCount}${r.errors ? ' <span style="color:#e0a0a0;font-size:11px">(' + r.errors + ' err)</span>' : ''}</td>
+        <td${errTitle}>${repoCount}${skipNote}${r.errors ? ' <span style="color:#e0a0a0;font-size:11px">(' + r.errors + ' err)</span>' : ''}</td>
         <td style="color:#9aa0a6;white-space:nowrap">${fmtDuration(r.durationMs)}</td>
         <td><span class="pill ${statusPillClass}">${r.status}</span></td>
       </tr>`;

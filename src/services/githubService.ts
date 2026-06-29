@@ -9,6 +9,8 @@ export interface GithubRepo {
   archived: boolean;
   default_branch: string;
   clone_url: string;
+  /** ISO 8601 timestamp of the last push to this repo. */
+  pushed_at: string;
 }
 
 export interface GithubOrg {

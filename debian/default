@@ -14,3 +14,6 @@ ARCHIVE_CONFIG_PATH=/etc/git-unas/archive-config.json
 
 # GitHub archive run history log
 ARCHIVE_RUNS_PATH=/etc/git-unas/archive-runs.json
+
+# GitHub archive push-timestamp cache (enables symlink shortcuts for unchanged repos)
+ARCHIVE_CACHE_PATH=/etc/git-unas/archive-cache.json
