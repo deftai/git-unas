@@ -686,7 +686,8 @@ function startProgressPolling() {
       fill.style.width = pc + '%';
       pct.textContent = pc + '%';
       label.textContent = `Archiving ${p.label} (${done}/${total} repos${p.errors ? ', ' + p.errors + ' errors' : ''})`;
-      sub.textContent = p.currentRepo ? `Current: ${p.currentRepo}` : '';
+      sub.textContent = p.currentRepo
+        ? `${done === 0 ? 'Cloning' : 'Done, next:'} ${p.currentRepo}` : 'Starting…';
       if (p.done) {
         clearInterval(_progressPoll);
         wrap.classList.remove('on');

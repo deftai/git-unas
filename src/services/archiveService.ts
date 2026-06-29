@@ -302,6 +302,9 @@ export async function archiveOrgEntry(
   const retention = entry.retentionDays ?? config.retentionDays;
 
   for (const r of repos) {
+    // Update the displayed repo name before starting so the UI shows activity
+    // even while the clone is running (which can take minutes for large repos).
+    if (_progress) _progress.currentRepo = r.name;
     try {
       const dest = await archiveRepo(entry.owner, r.name, config, retention, runDir);
       advanceProgress(r.name, false);
