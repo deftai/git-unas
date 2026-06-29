@@ -8,6 +8,7 @@ import {
   runAllNow,
   newEntryId,
   nextRunDate,
+  getArchiveProgress,
   type ArchiveEntry,
   type ArchiveConfig,
   type Frequency,
@@ -222,6 +223,13 @@ archiveRouter.delete('/entries/:id', (req: Request, res: Response) => {
   saveArchiveConfig(config);
   startArchiveScheduler(config);
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/archive/progress  — live progress for the current/last archive op
+// ---------------------------------------------------------------------------
+archiveRouter.get('/progress', (_req: Request, res: Response) => {
+  res.json(getArchiveProgress());
 });
 
 // ---------------------------------------------------------------------------

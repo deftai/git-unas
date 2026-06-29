@@ -69,6 +69,12 @@ border-radius:4px;padding:6px;margin:6px 0}
 .repo-check-row{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px}
 .repo-check-row input{flex:none}
 .repo-check-row label{color:#c6c9cc;cursor:pointer}
+.progress-wrap{margin:10px 0 4px 0;display:none}
+.progress-wrap.on{display:block}
+.progress-bar-bg{background:#1e2535;border-radius:4px;height:8px;overflow:hidden;margin:6px 0 4px 0}
+.progress-bar-fill{height:100%;background:#1e6feb;border-radius:4px;transition:width 0.4s ease}
+.progress-label{font-size:12px;color:#c6c9cc;display:flex;justify-content:space-between}
+.progress-sub{font-size:11px;color:#7a8190;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 pre{background:#111621;border:1px solid #2a3140;border-radius:4px;padding:10px;
 font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;
 max-height:200px;overflow-y:auto;margin:8px 0 0 0}
@@ -249,7 +255,15 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
 <div class="tab-pane" id="arch-tab-entries">
   <div class="row" style="justify-content:space-between;margin-bottom:4px">
     <span style="font-size:12px;color:#9aa0a6" id="arch-entry-count">Loading…</span>
-    <button onclick="archRunAll()" style="background:#2a4a2a;border-color:#3a6a3a;font-size:12px">Run all now</button>
+    <button onclick="archRunAll()" id="arch-run-all-btn" style="background:#2a4a2a;border-color:#3a6a3a;font-size:12px">Run all now</button>
+  </div>
+  <div class="progress-wrap" id="arch-progress-wrap">
+    <div class="progress-label">
+      <span id="arch-progress-label">Archiving…</span>
+      <span id="arch-progress-pct">0%</span>
+    </div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="arch-progress-fill" style="width:0%"></div></div>
+    <div class="progress-sub" id="arch-progress-sub"></div>
   </div>
   <div class="entry-list" id="arch-entries"><span style="color:#5a6172">No entries yet.</span></div>
   <div class="msg" id="arch-entries-msg"></div>
@@ -649,20 +663,63 @@ async function archToggleEntry(id, enabled) {
   else msg('arch-entries-msg', 'Update failed', false);
 }
 
+let _progressPoll = null;
+
+function startProgressPolling() {
+  const wrap = document.getElementById('arch-progress-wrap');
+  const fill = document.getElementById('arch-progress-fill');
+  const label = document.getElementById('arch-progress-label');
+  const pct = document.getElementById('arch-progress-pct');
+  const sub = document.getElementById('arch-progress-sub');
+  const btn = document.getElementById('arch-run-all-btn');
+  wrap.classList.add('on');
+  btn.disabled = true;
+  if (_progressPoll) clearInterval(_progressPoll);
+  _progressPoll = setInterval(async () => {
+    try {
+      const r = await fetch('api/archive/progress');
+      const p = await r.json();
+      if (!p) { clearInterval(_progressPoll); return; }
+      const done = p.current;
+      const total = p.total || 1;
+      const pc = Math.round((done / total) * 100);
+      fill.style.width = pc + '%';
+      pct.textContent = pc + '%';
+      label.textContent = `Archiving ${p.label} (${done}/${total} repos${p.errors ? ', ' + p.errors + ' errors' : ''})`;
+      sub.textContent = p.currentRepo ? `Current: ${p.currentRepo}` : '';
+      if (p.done) {
+        clearInterval(_progressPoll);
+        wrap.classList.remove('on');
+        btn.disabled = false;
+        fill.style.width = '0%';
+        loadArchStatus();
+        msg('arch-entries-msg',
+          p.errors ? `Done — ${p.current - p.errors} archived, ${p.errors} errors` : `Done — ${p.current} repos archived`,
+          !p.errors);
+      }
+    } catch { clearInterval(_progressPoll); }
+  }, 1500);
+}
+
 async function archRunEntry(id) {
-  spin(true, 'Archiving…');
+  startProgressPolling();
   const r = await post(`api/archive/run/${id}`, {});
-  spin(false);
-  loadArchStatus();
-  msg('arch-entries-msg', r.ok ? 'Archive complete.' : (r.data.error || 'Failed'), r.ok);
+  // polling continues until progress.done
+  if (!r.ok) {
+    document.getElementById('arch-progress-wrap').classList.remove('on');
+    document.getElementById('arch-run-all-btn').disabled = false;
+    msg('arch-entries-msg', r.data.error || 'Failed', false);
+  }
 }
 
 async function archRunAll() {
-  spin(true, 'Archiving all…');
+  startProgressPolling();
   const r = await post('api/archive/run', {});
-  spin(false);
-  loadArchStatus();
-  msg('arch-entries-msg', r.ok ? 'All archives complete.' : (r.data.error || 'Failed'), r.ok);
+  if (!r.ok) {
+    document.getElementById('arch-progress-wrap').classList.remove('on');
+    document.getElementById('arch-run-all-btn').disabled = false;
+    msg('arch-entries-msg', r.data.error || 'Failed', false);
+  }
 }
 
 async function archRemoveEntry(id) {

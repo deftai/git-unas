@@ -273,13 +273,16 @@ export async function archiveOrgEntry(
     .filter((r) => !entry.excludeRepos.includes(r.name));
 
   const results: { repo: string; status: 'ok' | 'error'; message: string }[] = [];
+  startProgress(entry.id, `${entry.owner} (org)`, repos.length);
 
   for (const r of repos) {
     try {
       const retention = entry.retentionDays ?? config.retentionDays;
       const dest = await archiveRepo(entry.owner, r.name, config, retention);
+      advanceProgress(r.name, false);
       results.push({ repo: r.name, status: 'ok', message: dest });
     } catch (err) {
+      advanceProgress(r.name, true);
       results.push({
         repo: r.name,
         status: 'error',
@@ -287,8 +290,45 @@ export async function archiveOrgEntry(
       });
     }
   }
+  completeProgress();
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// Progress tracking
+// ---------------------------------------------------------------------------
+
+export interface ArchiveProgress {
+  entryId: string;
+  label: string;       // e.g. "myorg (org)" or "myorg/myrepo"
+  current: number;
+  total: number;
+  currentRepo: string;
+  errors: number;
+  done: boolean;
+  startedAt: string;
+}
+
+let _progress: ArchiveProgress | null = null;
+
+export function getArchiveProgress(): ArchiveProgress | null {
+  return _progress;
+}
+
+function startProgress(entryId: string, label: string, total: number): void {
+  _progress = { entryId, label, current: 0, total, currentRepo: '', errors: 0, done: false, startedAt: new Date().toISOString() };
+}
+
+function advanceProgress(repo: string, isError: boolean): void {
+  if (!_progress) return;
+  _progress.current += 1;
+  _progress.currentRepo = repo;
+  if (isError) _progress.errors += 1;
+}
+
+function completeProgress(): void {
+  if (_progress) _progress.done = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +355,11 @@ function updateEntryStatus(
 async function runEntry(entry: ArchiveEntry, config: ArchiveConfig): Promise<void> {
   try {
     if (entry.type === 'repo') {
+      startProgress(entry.id, `${entry.owner}/${entry.repo}`, 1);
       const retention = entry.retentionDays ?? config.retentionDays;
       const dest = await archiveRepo(entry.owner, entry.repo!, config, retention);
+      advanceProgress(entry.repo!, false);
+      completeProgress();
       updateEntryStatus(entry.id, 'ok', dest);
     } else {
       const results = await archiveOrgEntry(entry, config);
