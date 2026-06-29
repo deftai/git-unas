@@ -234,30 +234,30 @@ describe('pruneOldArchives', () => {
     expect(() => pruneOldArchives('owner', 'repo', '/nonexistent/dir', 30)).not.toThrow();
   });
 
-  it('deletes run folders older than retentionDays', async () => {
+  it('deletes prefixed run folders older than retentionDays', async () => {
     const { pruneOldRunDirs } = await imp();
 
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
     const y = sixtyDaysAgo.getUTCFullYear();
     const mo = String(sixtyDaysAgo.getUTCMonth() + 1).padStart(2, '0');
     const d = String(sixtyDaysAgo.getUTCDate()).padStart(2, '0');
-    const oldDir = `${y}-${mo}-${d}_02-00-00`;
+    const oldDir = `myorg_${y}-${mo}-${d}_02-00-00`;
     fs.mkdirSync(path.join(tmpDir, oldDir));
-    fs.writeFileSync(path.join(tmpDir, oldDir, 'owner__repo.tar.gz'), 'old');
+    fs.writeFileSync(path.join(tmpDir, oldDir, 'myorg__repo.tar.gz'), 'old');
 
     pruneOldRunDirs(tmpDir, 30);
 
     expect(fs.existsSync(path.join(tmpDir, oldDir))).toBe(false);
   });
 
-  it('keeps run folders within retentionDays', async () => {
+  it('keeps prefixed run folders within retentionDays', async () => {
     const { pruneOldRunDirs } = await imp();
 
     const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
     const y = yesterday.getUTCFullYear();
     const mo = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
     const d = String(yesterday.getUTCDate()).padStart(2, '0');
-    const recentDir = `${y}-${mo}-${d}_02-00-00`;
+    const recentDir = `myrepo_${y}-${mo}-${d}_02-00-00`;
     fs.mkdirSync(path.join(tmpDir, recentDir));
 
     pruneOldRunDirs(tmpDir, 30);
@@ -323,13 +323,14 @@ describe('archiveRepo', () => {
     const tarArgs = freshSpawn.mock.calls[1][1] as string[];
     expect(tarArgs[0]).toBe('-czf');
 
-    // Archive now lives inside a dated run folder: baseDir/YYYY-MM-DD_HH-MM-SS/owner__repo.tar.gz
+    // Archive lives inside a prefixed dated run folder:
+    // baseDir/<repo>_YYYY-MM-DD_HH-MM-SS/owner__repo.tar.gz
     expect(dest).toMatch(/owner__repo\.tar\.gz$/);
     expect(dest.startsWith(tmpDir)).toBe(true);
-    // Run folder is a direct child of baseDir
     const runDir = path.dirname(dest);
     expect(path.dirname(runDir)).toBe(tmpDir);
-    expect(path.basename(runDir)).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
+    // Folder name: repo_YYYY-MM-DD_HH-MM-SS
+    expect(path.basename(runDir)).toMatch(/^repo_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
   });
 
   it('rejects when git clone fails', async () => {

@@ -141,8 +141,9 @@ export function nextRunDate(freq: Frequency): Date | null {
 // Retention / pruning
 // ---------------------------------------------------------------------------
 
-// Matches a run folder name: YYYY-MM-DD_HH-MM-SS
-const RUN_DIR_RE = /^(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}$/;
+// Matches a run folder name: [prefix_]YYYY-MM-DD_HH-MM-SS
+// The date component always appears at the end.
+const RUN_DIR_RE = /(?:^|_)(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}$/;
 
 // Legacy: matches old flat archive filenames (owner__repo__YYYY-MM-DD_HH-MM-SS.tar.gz)
 const ARCHIVE_FILE_RE = /^(.+)__(.+)__(\d{4}-\d{2}-\d{2})_\d{2}-\d{2}-\d{2}\.tar\.gz(\.unas)?$/;
@@ -198,11 +199,14 @@ export function pruneOldArchives(
   pruneOldRunDirs(baseDir, retentionDays);
 }
 
-/** Build the timestamped run directory path and create it. */
-export function makeRunDir(baseDir: string): string {
+/** Build the timestamped run directory path and create it.
+ *  prefix: org name (for org runs) or repo name (for single-repo runs).
+ */
+export function makeRunDir(baseDir: string, prefix?: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const now = new Date();
-  const name = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const name = prefix ? `${prefix}_${timestamp}` : timestamp;
   const dir = path.join(baseDir, name);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -244,7 +248,8 @@ export async function archiveRepo(
 ): Promise<string> {
   if (!config.baseDir) throw new Error('baseDir is not configured');
 
-  const destDir = runDir ?? makeRunDir(config.baseDir);
+  // When no shared runDir is given (standalone single-repo call), use the repo name as prefix.
+  const destDir = runDir ?? makeRunDir(config.baseDir, repo);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-unas-archive-'));
   const cloneDir = path.join(tmpDir, `${repo}.git`);
 
@@ -291,9 +296,9 @@ export async function archiveOrgEntry(
   const results: { repo: string; status: 'ok' | 'error'; message: string }[] = [];
   startProgress(entry.id, `${entry.owner} (org)`, repos.length);
 
-  // All repos in this org run share one timestamped folder.
+  // All repos in this org run share one timestamped folder prefixed with the org name.
   if (!fs.existsSync(config.baseDir)) fs.mkdirSync(config.baseDir, { recursive: true });
-  const runDir = makeRunDir(config.baseDir);
+  const runDir = makeRunDir(config.baseDir, entry.owner);
   const retention = entry.retentionDays ?? config.retentionDays;
 
   for (const r of repos) {
@@ -381,7 +386,7 @@ async function runEntry(entry: ArchiveEntry, config: ArchiveConfig): Promise<voi
       startProgress(entry.id, `${entry.owner}/${entry.repo}`, 1);
       const retention = entry.retentionDays ?? config.retentionDays;
       if (!fs.existsSync(config.baseDir)) fs.mkdirSync(config.baseDir, { recursive: true });
-      const runDir = makeRunDir(config.baseDir);
+      const runDir = makeRunDir(config.baseDir, entry.repo);  // prefix = repo name
       const dest = await archiveRepo(entry.owner, entry.repo!, config, retention, runDir);
       pruneOldRunDirs(config.baseDir, retention);
       advanceProgress(entry.repo!, false);
