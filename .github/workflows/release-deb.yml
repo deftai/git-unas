@@ -30,7 +30,8 @@ jobs:
 
       - name: Build ARM64 binary
         run: |
-          # @yao-pkg/pkg fetches pre-built Node.js 22 arm64 host binaries automatically.
+          # --no-bytecode: V8 bytecode generation fails when cross-compiling x86→arm64;
+          # bundling JS source instead works correctly on the target device.
           npm run build:binary
 
       - name: Extract version
