@@ -8,3 +8,6 @@ PORT=7892
 
 # Schedule config file location
 SCHEDULE_CONFIG_PATH=/etc/git-unas/schedule.json
+
+# GitHub archive config file location
+ARCHIVE_CONFIG_PATH=/etc/git-unas/archive-config.json
