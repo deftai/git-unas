@@ -234,70 +234,63 @@ describe('pruneOldArchives', () => {
     expect(() => pruneOldArchives('owner', 'repo', '/nonexistent/dir', 30)).not.toThrow();
   });
 
-  it('deletes files older than retentionDays', async () => {
-    const { pruneOldArchives } = await imp();
+  it('deletes run folders older than retentionDays', async () => {
+    const { pruneOldRunDirs } = await imp();
 
-    // Create an archive file with a date 60 days ago
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
     const y = sixtyDaysAgo.getUTCFullYear();
-    const m = String(sixtyDaysAgo.getUTCMonth() + 1).padStart(2, '0');
+    const mo = String(sixtyDaysAgo.getUTCMonth() + 1).padStart(2, '0');
     const d = String(sixtyDaysAgo.getUTCDate()).padStart(2, '0');
-    const oldFile = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
-    fs.writeFileSync(path.join(tmpDir, oldFile), 'old');
+    const oldDir = `${y}-${mo}-${d}_02-00-00`;
+    fs.mkdirSync(path.join(tmpDir, oldDir));
+    fs.writeFileSync(path.join(tmpDir, oldDir, 'owner__repo.tar.gz'), 'old');
 
-    pruneOldArchives('owner', 'repo', tmpDir, 30); // 30-day retention
+    pruneOldRunDirs(tmpDir, 30);
 
-    expect(fs.existsSync(path.join(tmpDir, oldFile))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, oldDir))).toBe(false);
   });
 
-  it('keeps files within retentionDays', async () => {
-    const { pruneOldArchives } = await imp();
+  it('keeps run folders within retentionDays', async () => {
+    const { pruneOldRunDirs } = await imp();
 
-    // Create a file dated yesterday
     const yesterday = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
     const y = yesterday.getUTCFullYear();
-    const m = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+    const mo = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
     const d = String(yesterday.getUTCDate()).padStart(2, '0');
-    const recentFile = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
-    fs.writeFileSync(path.join(tmpDir, recentFile), 'recent');
+    const recentDir = `${y}-${mo}-${d}_02-00-00`;
+    fs.mkdirSync(path.join(tmpDir, recentDir));
 
-    pruneOldArchives('owner', 'repo', tmpDir, 30);
+    pruneOldRunDirs(tmpDir, 30);
 
-    expect(fs.existsSync(path.join(tmpDir, recentFile))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, recentDir))).toBe(true);
   });
 
-  it('only affects files matching the owner__repo__ prefix', async () => {
-    const { pruneOldArchives } = await imp();
+  it('ignores non-dated directories', async () => {
+    const { pruneOldRunDirs } = await imp();
 
-    // Old file for a different owner/repo — should NOT be deleted
-    const oldDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const y = oldDate.getUTCFullYear();
-    const m = String(oldDate.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(oldDate.getUTCDate()).padStart(2, '0');
-    const otherFile = `other__project__${y}-${m}-${d}_02-00-00.tar.gz`;
-    fs.writeFileSync(path.join(tmpDir, otherFile), 'other');
+    const otherDir = 'some-other-directory';
+    fs.mkdirSync(path.join(tmpDir, otherDir));
 
-    pruneOldArchives('owner', 'repo', tmpDir, 30);
+    pruneOldRunDirs(tmpDir, 30);
 
-    expect(fs.existsSync(path.join(tmpDir, otherFile))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, otherDir))).toBe(true);
   });
 
-  it('deletes both .tar.gz and .tar.gz.unas files past retention', async () => {
-    const { pruneOldArchives } = await imp();
+  it('removes entire old run folder including all repo archives', async () => {
+    const { pruneOldRunDirs } = await imp();
 
     const oldDate = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
     const y = oldDate.getUTCFullYear();
-    const m = String(oldDate.getUTCMonth() + 1).padStart(2, '0');
+    const mo = String(oldDate.getUTCMonth() + 1).padStart(2, '0');
     const d = String(oldDate.getUTCDate()).padStart(2, '0');
-    const tarFile  = `owner__repo__${y}-${m}-${d}_02-00-00.tar.gz`;
-    const unasFile = `owner__repo__${y}-${m}-${d}_03-00-00.tar.gz.unas`;
-    fs.writeFileSync(path.join(tmpDir, tarFile),  'tar');
-    fs.writeFileSync(path.join(tmpDir, unasFile), 'unas');
+    const oldDir = `${y}-${mo}-${d}_02-00-00`;
+    fs.mkdirSync(path.join(tmpDir, oldDir));
+    fs.writeFileSync(path.join(tmpDir, oldDir, 'org__repo-a.tar.gz'), 'a');
+    fs.writeFileSync(path.join(tmpDir, oldDir, 'org__repo-b.tar.gz.unas'), 'b');
 
-    pruneOldArchives('owner', 'repo', tmpDir, 30);
+    pruneOldRunDirs(tmpDir, 30);
 
-    expect(fs.existsSync(path.join(tmpDir, tarFile))).toBe(false);
-    expect(fs.existsSync(path.join(tmpDir, unasFile))).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, oldDir))).toBe(false);
   });
 });
 
@@ -330,8 +323,13 @@ describe('archiveRepo', () => {
     const tarArgs = freshSpawn.mock.calls[1][1] as string[];
     expect(tarArgs[0]).toBe('-czf');
 
-    expect(dest).toMatch(/owner__repo__\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.tar\.gz$/);
+    // Archive now lives inside a dated run folder: baseDir/YYYY-MM-DD_HH-MM-SS/owner__repo.tar.gz
+    expect(dest).toMatch(/owner__repo\.tar\.gz$/);
     expect(dest.startsWith(tmpDir)).toBe(true);
+    // Run folder is a direct child of baseDir
+    const runDir = path.dirname(dest);
+    expect(path.dirname(runDir)).toBe(tmpDir);
+    expect(path.basename(runDir)).toMatch(/^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/);
   });
 
   it('rejects when git clone fails', async () => {
