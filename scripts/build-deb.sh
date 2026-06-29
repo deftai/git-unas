@@ -73,6 +73,8 @@ done
 cp "${REPO_ROOT}/debian/conffiles" "${STAGE}/DEBIAN/conffiles"
 
 # ---- Build ----
-dpkg-deb --build --root-owner-group "$STAGE" "$DEB_OUT"
+# Force xz compression — UniFi OS ships an older dpkg that does not support
+# the zst compression that Ubuntu 22.04+ dpkg-deb uses by default.
+dpkg-deb -Zxz --build --root-owner-group "$STAGE" "$DEB_OUT"
 
 echo "==> Built: $DEB_OUT ($(du -sh "$DEB_OUT" | cut -f1))"
