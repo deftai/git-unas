@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "build:binary": "pkg dist/server.js --targets node22-linux-arm64 --no-bytecode --output dist/git-unas-arm64 --config pkg.config.json",
+    "build:binary": "pkg dist/server.js --targets node22-linux-arm64 --no-bytecode --public --output dist/git-unas-arm64 --config pkg.config.json",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
     "fmt": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
