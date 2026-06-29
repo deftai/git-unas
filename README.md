@@ -14,7 +14,7 @@ Served on `127.0.0.1:7892` and exposed via nginx at `https://<device>/git-unas/`
 | **Tar Archive** | Create compressed (gzip) or uncompressed archives; extract existing archives. |
 | **Encryption** | AES-256-GCM file encryption with PBKDF2 key derivation. `.unas` format. |
 | **Scheduled Backup** | Cron-driven tar + rotate: configurable 24h time, day-of-week selection, keep-N rolling retention. |
-| **GitHub Archive** | Mirror GitHub repos and orgs via `git clone --mirror`. Hourly / daily / weekly / monthly schedule per entry. 1–180 day retention with per-entry override. Optional AES-256-GCM encryption. |
+| **GitHub Archive** | Mirror GitHub repos and orgs via `git clone --mirror`. Hourly / daily / weekly / monthly schedule per entry. 1–180 day retention with per-entry override. Optional AES-256-GCM encryption. Symlink-based incremental runs — only re-clones repos with new commits. |
 
 ---
 
@@ -39,7 +39,7 @@ The admin UI is then available at `https://<device-ip>/git-unas/`.
 ### Manual `.deb`
 
 ```sh
-VER=1.1.0
+VER=1.1.12
 curl -fsSL -O https://github.com/demiurge28/git-unas/releases/download/v${VER}/git-unas_${VER}_arm64.deb
 dpkg -i git-unas_${VER}_arm64.deb
 ```
@@ -93,7 +93,9 @@ git-unas (Node.js/TypeScript — single ARM64 binary)
 
 Persistence
   /etc/git-unas/schedule.json         ← scheduled backup config
-  /etc/git-unas/archive-config.json   ← GitHub archive config (token encrypted at rest)
+  /etc/git-unas/archive-config.json   ← GitHub archive settings
+  /etc/git-unas/archive-cache.json    ← pushed_at cache for symlink incremental runs
+  /etc/git-unas/archive-runs.json     ← run history log (last 200 runs)
   /etc/default/git-unas               ← PORT, config paths (conffile)
 
 Firmware survivability
@@ -129,6 +131,8 @@ Edit `/etc/default/git-unas.local` (never overwritten by upgrades):
 PORT=7892
 SCHEDULE_CONFIG_PATH=/etc/git-unas/schedule.json
 ARCHIVE_CONFIG_PATH=/etc/git-unas/archive-config.json
+ARCHIVE_CACHE_PATH=/etc/git-unas/archive-cache.json
+ARCHIVE_RUNS_PATH=/etc/git-unas/archive-runs.json
 ```
 
 ### Scheduled backup (`/etc/git-unas/schedule.json`)
@@ -249,7 +253,7 @@ git push origin v1.1.0
 
 ## Tests
 
-147 tests across 10 suites:
+147 tests across 10 suites (all passing on main):
 
 | Suite | Tests | Coverage |
 |---|---|---|
@@ -275,6 +279,13 @@ npm test
 Tested on Ubiquiti Dream Machine / Dream Router running UniFi OS 4.x (Debian arm64). The binary is a self-contained Node.js 22 executable — no Node.js installation required on the device.
 
 ## Changelog
+
+### v1.1.12
+- **Symlink-based incremental archiving** — `archive-cache.json` stores `pushed_at` per repo; unchanged repos create a relative symlink to the previous real archive instead of re-cloning; 62/64 repos symlinked on a typical daily run (3s vs 4+ minutes)
+- **Run history** — History tab shows date, label, archived/skipped/error counts, duration, status pill; persisted to `archive-runs.json` (last 200 runs)
+- **Live progress bar** — polls `/api/archive/progress` every 1.5s; shows cloned/symlinked counts and current repo name
+- **Dated run folders** — `<org>_YYYY-MM-DD_HH-MM-SS/` structure with `<owner>__<repo>.tar.gz` inside; retention prunes whole folders
+- **Bug fixes** — `git` declared as package dependency; `ARCHIVE_CONFIG_PATH`/`ARCHIVE_CACHE_PATH`/`ARCHIVE_RUNS_PATH` set in `/etc/default/git-unas`; native ARM64 CI runner fixes V8 bytecode cross-compilation; `systemctl reset-failed` in postinst
 
 ### v1.1.0
 - **GitHub Archive** — mirror repos and orgs via `git clone --mirror`; hourly/daily/weekly/monthly schedule per entry; 1–180 day retention with per-entry override; optional AES-256-GCM encryption; browser UI with org picker and repo checklist
