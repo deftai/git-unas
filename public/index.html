@@ -403,22 +403,54 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
 
 <!-- Bitwarden CLI -->
 <div class="card"><h2>Bitwarden CLI</h2>
-<p style="font-size:12px;color:#9aa0a6;margin:0 0 10px 0">
-Manage your Bitwarden vault from the NAS. Requires <code>bw</code> CLI to be installed on the device.</p>
 <div class="kv" id="bw-status-kv"><span class="k">Status</span><span style="color:#5a6172">Loading…</span></div>
-<!-- Unlock form (hidden when unlocked or not installed) -->
-<div id="bw-unlock-section" style="margin-top:8px">
-  <div class="row"><label>Master password</label>
-  <input type="password" id="bw-password" placeholder="master password"></div>
+
+<!-- Install section (shown when not_installed) -->
+<div id="bw-install-section" style="display:none;margin-top:10px">
+  <p style="font-size:12px;color:#9aa0a6;margin:0 0 8px 0">
+  The <code>bw</code> CLI is not installed on this device. Click below to download and install it automatically.</p>
+  <div id="bw-server-row" style="display:none">
+    <div class="row"><label>Server URL</label>
+    <input type="text" id="bw-server-url" placeholder="https://vault.bitwarden.com"></div>
+  </div>
   <div class="row">
-    <button onclick="bwUnlock()">Unlock vault</button>
+    <button onclick="bwInstall()">&#8595; Install bw CLI</button>
+    <button onclick="document.getElementById('bw-server-row').style.display='block'" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Self-hosted…</button>
   </div>
 </div>
+
+<!-- Login section (shown when unauthenticated) -->
+<div id="bw-login-section" style="display:none;margin-top:10px">
+  <div class="row"><label>Email</label>
+  <input type="email" id="bw-email" placeholder="you@example.com" autocomplete="username"></div>
+  <div class="row"><label>Master password</label>
+  <input type="password" id="bw-login-pass" placeholder="master password" autocomplete="current-password"></div>
+  <div id="bw-2fa-row" style="display:none">
+    <div class="row"><label>2FA code</label>
+    <input type="text" id="bw-2fa" placeholder="6-digit code" style="width:120px;flex:none" maxlength="8" inputmode="numeric"></div>
+  </div>
+  <div class="row" style="gap:6px">
+    <button onclick="bwLogin()">Log in</button>
+    <button onclick="document.getElementById('bw-2fa-row').style.display='block'" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Use 2FA code</button>
+  </div>
+</div>
+
+<!-- Unlock section (shown when locked) -->
+<div id="bw-unlock-section" style="display:none;margin-top:10px">
+  <div class="row"><label>Master password</label>
+  <input type="password" id="bw-password" placeholder="master password" autocomplete="current-password"></div>
+  <div class="row">
+    <button onclick="bwUnlock()">Unlock vault</button>
+    <button onclick="bwLogout()" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Log out</button>
+  </div>
+</div>
+
 <!-- Controls (shown when session is active) -->
-<div id="bw-controls-section" style="display:none;margin-top:8px">
+<div id="bw-controls-section" style="display:none;margin-top:10px">
   <div class="row">
     <button onclick="bwLock()" style="background:#2a1a1a;border-color:#6a2a2a">Lock vault</button>
     <button onclick="bwSync()" style="background:#111621;border-color:#3a4255;color:#c6c9cc">↻ Sync</button>
+    <button onclick="bwLogout()" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Log out</button>
   </div>
   <div style="margin-top:10px">
     <div class="row">
@@ -1045,9 +1077,63 @@ function renderBwStatus(s) {
   if (s.lastSync) html += '<span class="k">Last sync</span><span>' + new Date(s.lastSync).toLocaleString() + '</span>';
   document.getElementById('bw-status-kv').innerHTML = html;
   const active = s.status === 'unlocked' && s.sessionActive;
-  const showUnlock = !active && s.status !== 'not_installed';
-  document.getElementById('bw-unlock-section').style.display = showUnlock ? 'block' : 'none';
-  document.getElementById('bw-controls-section').style.display = active ? 'block' : 'none';
+  document.getElementById('bw-install-section').style.display   = s.status === 'not_installed'   ? 'block' : 'none';
+  document.getElementById('bw-login-section').style.display     = s.status === 'unauthenticated' ? 'block' : 'none';
+  document.getElementById('bw-unlock-section').style.display    = s.status === 'locked'          ? 'block' : 'none';
+  document.getElementById('bw-controls-section').style.display  = active                         ? 'block' : 'none';
+}
+
+async function bwInstall() {
+  const serverUrl = document.getElementById('bw-server-url').value.trim();
+  spin(true, 'Downloading Bitwarden CLI… (this may take up to a minute)');
+  try {
+    const r = await post('api/bitwarden/install', { serverUrl: serverUrl || undefined });
+    if (r.ok) {
+      renderBwStatus(r.data.status);
+      msg('bw-msg', 'Bitwarden CLI installed (v' + r.data.version + '). Log in below.', true);
+    } else {
+      msg('bw-msg', r.data.error || 'Install failed', false);
+    }
+  } catch (e) { msg('bw-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function bwLogin() {
+  const email    = document.getElementById('bw-email').value.trim();
+  const password = document.getElementById('bw-login-pass').value;
+  const twoFactorCode = document.getElementById('bw-2fa').value.trim();
+  if (!email || !password) { msg('bw-msg', 'Email and password are required', false); return; }
+  spin(true, 'Logging in to Bitwarden…');
+  try {
+    const r = await post('api/bitwarden/login', { email, password, twoFactorCode: twoFactorCode || undefined });
+    if (r.ok) {
+      document.getElementById('bw-login-pass').value = '';
+      document.getElementById('bw-2fa').value = '';
+      renderBwStatus(r.data.status);
+      msg('bw-msg', 'Logged in and vault unlocked.', true);
+    } else {
+      const hint = r.data.error || 'Login failed';
+      // Nudge user to use 2FA field if the error suggests it
+      if (hint.toLowerCase().includes('two') || hint.toLowerCase().includes('2fa') || hint.toLowerCase().includes('otp')) {
+        document.getElementById('bw-2fa-row').style.display = 'block';
+      }
+      msg('bw-msg', hint, false);
+    }
+  } catch (e) { msg('bw-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function bwLogout() {
+  if (!confirm('Log out of Bitwarden? The local vault will be cleared.')) return;
+  const r = await post('api/bitwarden/logout', {});
+  if (r.ok) {
+    _bwItems = [];
+    document.getElementById('bw-items').innerHTML = '';
+    await bwRefreshStatus();
+    msg('bw-msg', 'Logged out.', true);
+  } else {
+    msg('bw-msg', 'Logout failed', false);
+  }
 }
 
 async function bwUnlock() {

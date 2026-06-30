@@ -5,6 +5,9 @@ import {
   lockVault,
   syncVault,
   searchItems,
+  installBw,
+  loginBw,
+  logoutBw,
 } from '../services/bitwardenService';
 
 export const bitwardenRouter = Router();
@@ -47,6 +50,48 @@ bitwardenRouter.post('/sync', async (_req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: message });
   }
+});
+
+// POST /api/bitwarden/install  { serverUrl?: string }
+bitwardenRouter.post('/install', async (req: Request, res: Response) => {
+  // Allow up to 3 minutes — download + extract can be slow on the NAS
+  req.socket.setTimeout(180_000);
+  const { serverUrl } = req.body as { serverUrl?: string };
+  try {
+    const result = await installBw(serverUrl);
+    const status = await getBwStatus();
+    res.json({ success: true, version: result.version, status });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/bitwarden/login  { email, password, twoFactorCode? }
+bitwardenRouter.post('/login', async (req: Request, res: Response) => {
+  const { email, password, twoFactorCode } = req.body as {
+    email?: string;
+    password?: string;
+    twoFactorCode?: string;
+  };
+  if (!email || !password) {
+    res.status(400).json({ error: 'email and password are required' });
+    return;
+  }
+  try {
+    await loginBw(email, password, twoFactorCode);
+    const status = await getBwStatus();
+    res.json({ success: true, status });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/bitwarden/logout
+bitwardenRouter.post('/logout', async (_req: Request, res: Response) => {
+  await logoutBw();
+  res.json({ success: true });
 });
 
 // GET /api/bitwarden/items?search=<query>
