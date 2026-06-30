@@ -85,6 +85,24 @@ border-radius:4px;padding:6px;margin:6px 0}
 pre{background:#111621;border:1px solid #2a3140;border-radius:4px;padding:10px;
 font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;
 max-height:200px;overflow-y:auto;margin:8px 0 0 0}
+button.browse-btn{background:#111621;border-color:#3a4255;color:#7a8190;padding:5px 8px;flex:none}
+button.browse-btn:hover{color:#8be9fd;border-color:#5a6a85}
+.browse-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(14,17,24,0.92);
+display:none;align-items:center;justify-content:center;z-index:100}
+.browse-modal.on{display:flex}
+.browse-inner{background:#1a1f2b;border:1px solid #2a3140;border-radius:6px;
+width:500px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column}
+.browse-header{display:flex;align-items:center;gap:8px;padding:10px 14px;
+border-bottom:1px solid #2a3140;min-width:0}
+.browse-path{font-size:12px;color:#9aa0a6;flex:1;overflow:hidden;
+text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.browse-list{flex:1;overflow-y:auto;padding:4px 0;min-height:140px;max-height:380px}
+.browse-item{display:flex;align-items:center;gap:8px;padding:5px 14px;
+font-size:13px;cursor:pointer}
+.browse-item:hover{background:#1e2535}
+.browse-item.file{opacity:0.85}
+.browse-footer{display:flex;gap:8px;justify-content:flex-end;padding:10px 14px;
+border-top:1px solid #2a3140}
 </style></head><body>
 <h1>git-unas</h1>
 
@@ -97,7 +115,8 @@ max-height:200px;overflow-y:auto;margin:8px 0 0 0}
 <div class="row"><label>Repo URL</label>
 <input type="text" id="git-url" placeholder="https://github.com/user/repo.git"></div>
 <div class="row"><label>Destination</label>
-<input type="text" id="git-dest" placeholder="/mnt/nas/repos/repo-name"></div>
+<input type="text" id="git-dest" placeholder="/mnt/nas/repos/repo-name">
+<button class="browse-btn" onclick="openBrowser('git-dest')" title="Browse">📁</button></div>
 <div class="row"><label>Branch</label>
 <input type="text" id="git-branch" placeholder="(default branch)"></div>
 <div class="row"><button onclick="doGitClone()">Clone</button></div>
@@ -109,9 +128,11 @@ max-height:200px;overflow-y:auto;margin:8px 0 0 0}
 <div class="card" style="background:#111621;border-color:#2a3140;margin-bottom:8px">
   <h2 style="font-size:12px">Create</h2>
   <div class="row"><label>Source</label>
-  <input type="text" id="tar-source" placeholder="/mnt/nas/path/to/source"></div>
+  <input type="text" id="tar-source" placeholder="/mnt/nas/path/to/source">
+  <button class="browse-btn" onclick="openBrowser('tar-source')" title="Browse">📁</button></div>
   <div class="row"><label>Archive</label>
-  <input type="text" id="tar-dest" placeholder="/mnt/nas/path/to/archive.tar.gz"></div>
+  <input type="text" id="tar-dest" placeholder="/mnt/nas/path/to/archive.tar.gz">
+  <button class="browse-btn" onclick="openBrowser('tar-dest')" title="Browse">📁</button></div>
   <div class="row"><label>Compress</label>
   <select id="tar-compress"><option value="true">Yes (gzip)</option><option value="false">No</option></select></div>
   <div class="row"><button onclick="doTarCreate()">Create archive</button></div>
@@ -120,9 +141,11 @@ max-height:200px;overflow-y:auto;margin:8px 0 0 0}
 <div class="card" style="background:#111621;border-color:#2a3140">
   <h2 style="font-size:12px">Extract</h2>
   <div class="row"><label>Archive</label>
-  <input type="text" id="tar-archive" placeholder="/mnt/nas/path/to/archive.tar.gz"></div>
+  <input type="text" id="tar-archive" placeholder="/mnt/nas/path/to/archive.tar.gz">
+  <button class="browse-btn" onclick="openBrowser('tar-archive')" title="Browse">📁</button></div>
   <div class="row"><label>Destination</label>
-  <input type="text" id="tar-extract-dest" placeholder="/mnt/nas/path/to/output"></div>
+  <input type="text" id="tar-extract-dest" placeholder="/mnt/nas/path/to/output">
+  <button class="browse-btn" onclick="openBrowser('tar-extract-dest')" title="Browse">📁</button></div>
   <div class="row"><button onclick="doTarExtract()">Extract</button></div>
   <div class="msg" id="tar-extract-msg"></div>
 </div></div>
@@ -134,9 +157,11 @@ AES-256-GCM with PBKDF2 key derivation. Encrypted files use the <code>.unas</cod
 <div class="card" style="background:#111621;border-color:#2a3140;margin-bottom:8px">
   <h2 style="font-size:12px">Encrypt</h2>
   <div class="row"><label>Source</label>
-  <input type="text" id="enc-source" placeholder="/mnt/nas/file.tar.gz"></div>
+  <input type="text" id="enc-source" placeholder="/mnt/nas/file.tar.gz">
+  <button class="browse-btn" onclick="openBrowser('enc-source')" title="Browse">📁</button></div>
   <div class="row"><label>Destination</label>
-  <input type="text" id="enc-dest" placeholder="/mnt/nas/file.tar.gz.unas"></div>
+  <input type="text" id="enc-dest" placeholder="/mnt/nas/file.tar.gz.unas">
+  <button class="browse-btn" onclick="openBrowser('enc-dest')" title="Browse">📁</button></div>
   <div class="row"><label>Passphrase</label>
   <input type="password" id="enc-pass" placeholder="passphrase"></div>
   <div class="row"><button onclick="doEncrypt()">Encrypt</button></div>
@@ -145,9 +170,11 @@ AES-256-GCM with PBKDF2 key derivation. Encrypted files use the <code>.unas</cod
 <div class="card" style="background:#111621;border-color:#2a3140">
   <h2 style="font-size:12px">Decrypt</h2>
   <div class="row"><label>Source</label>
-  <input type="text" id="dec-source" placeholder="/mnt/nas/file.tar.gz.unas"></div>
+  <input type="text" id="dec-source" placeholder="/mnt/nas/file.tar.gz.unas">
+  <button class="browse-btn" onclick="openBrowser('dec-source')" title="Browse">📁</button></div>
   <div class="row"><label>Destination</label>
-  <input type="text" id="dec-dest" placeholder="/mnt/nas/file.tar.gz"></div>
+  <input type="text" id="dec-dest" placeholder="/mnt/nas/file.tar.gz">
+  <button class="browse-btn" onclick="openBrowser('dec-dest')" title="Browse">📁</button></div>
   <div class="row"><label>Passphrase</label>
   <input type="password" id="dec-pass" placeholder="passphrase"></div>
   <div class="row"><button onclick="doDecrypt()">Decrypt</button></div>
@@ -193,10 +220,12 @@ Automatically tars a source path on a cron schedule and rotates old backups.</p>
 <div class="row">
   <label>Source path</label>
   <input type="text" id="sched-source" placeholder="/mnt/nas/data">
+  <button class="browse-btn" onclick="openBrowser('sched-source')" title="Browse">📁</button>
 </div>
 <div class="row">
   <label>Backup dir</label>
   <input type="text" id="sched-backupdir" placeholder="/mnt/nas/backups">
+  <button class="browse-btn" onclick="openBrowser('sched-backupdir')" title="Browse">📁</button>
 </div>
 <div class="row">
   <label>Keep (backups)</label>
@@ -237,7 +266,8 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
     <span id="arch-token-status" style="font-size:12px;color:#9aa0a6"></span>
   </div>
   <div class="row"><label>Archive base dir</label>
-  <input type="text" id="arch-basedir" placeholder="/mnt/nas/github-archives"></div>
+  <input type="text" id="arch-basedir" placeholder="/mnt/nas/github-archives">
+  <button class="browse-btn" onclick="openBrowser('arch-basedir')" title="Browse">📁</button></div>
   <div class="row"><label>Default frequency</label>
   <select id="arch-freq">
     <option value="hourly">Hourly</option>
@@ -367,6 +397,52 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
     </div>
     <div class="row"><button onclick="archAddOrg()">Add org entry</button></div>
     <div class="msg" id="add-org-msg"></div>
+  </div>
+</div>
+</div>
+
+<!-- Bitwarden CLI -->
+<div class="card"><h2>Bitwarden CLI</h2>
+<p style="font-size:12px;color:#9aa0a6;margin:0 0 10px 0">
+Manage your Bitwarden vault from the NAS. Requires <code>bw</code> CLI to be installed on the device.</p>
+<div class="kv" id="bw-status-kv"><span class="k">Status</span><span style="color:#5a6172">Loading…</span></div>
+<!-- Unlock form (hidden when unlocked or not installed) -->
+<div id="bw-unlock-section" style="margin-top:8px">
+  <div class="row"><label>Master password</label>
+  <input type="password" id="bw-password" placeholder="master password"></div>
+  <div class="row">
+    <button onclick="bwUnlock()">Unlock vault</button>
+  </div>
+</div>
+<!-- Controls (shown when session is active) -->
+<div id="bw-controls-section" style="display:none;margin-top:8px">
+  <div class="row">
+    <button onclick="bwLock()" style="background:#2a1a1a;border-color:#6a2a2a">Lock vault</button>
+    <button onclick="bwSync()" style="background:#111621;border-color:#3a4255;color:#c6c9cc">↻ Sync</button>
+  </div>
+  <div style="margin-top:10px">
+    <div class="row">
+      <label>Search items</label>
+      <input type="text" id="bw-search" placeholder="name or keyword…">
+      <button onclick="bwSearch()">Search</button>
+    </div>
+    <div id="bw-items" style="margin-top:6px"></div>
+  </div>
+</div>
+<div class="msg" id="bw-msg"></div></div>
+
+<!-- File browser modal -->
+<div class="browse-modal" id="browse-modal">
+<div class="browse-inner">
+  <div class="browse-header">
+    <span style="font-size:11px;color:#5a6172;flex:none">📁</span>
+    <span class="browse-path" id="browse-path-display">/</span>
+    <button onclick="closeBrowser()" style="background:none;border:none;color:#7a8190;font-size:16px;cursor:pointer;padding:0;flex:none">✕</button>
+  </div>
+  <div class="browse-list" id="browse-list"></div>
+  <div class="browse-footer">
+    <button id="browse-select-btn" onclick="selectBrowsed()">Select folder</button>
+    <button onclick="closeBrowser()" style="background:#111621;border-color:#3a4255;color:#c6c9cc">Cancel</button>
   </div>
 </div>
 </div>
@@ -868,5 +944,198 @@ async function loadArchHistory() {
 
 loadArchConfig();
 setInterval(loadArchStatus, 60000);
+
+// ---- File browser ----
+let _browseTarget = null;
+let _browseCurrent = '/';
+
+function openBrowser(targetId) {
+  _browseTarget = targetId;
+  const cur = document.getElementById(targetId).value.trim();
+  let startPath = '/';
+  if (cur) {
+    // If it looks like a file path, start at its parent dir
+    const slash = cur.lastIndexOf('/');
+    startPath = slash > 0 ? cur.substring(0, slash) : (cur.startsWith('/') ? '/' : '/');
+  }
+  document.getElementById('browse-modal').classList.add('on');
+  loadBrowseDir(startPath);
+}
+
+function closeBrowser() {
+  document.getElementById('browse-modal').classList.remove('on');
+}
+
+async function loadBrowseDir(dirPath) {
+  _browseCurrent = dirPath;
+  document.getElementById('browse-path-display').textContent = dirPath;
+  const listEl = document.getElementById('browse-list');
+  listEl.innerHTML = '<div style="padding:8px 14px;color:#5a6172;font-size:12px">Loading…</div>';
+  try {
+    const r = await fetch('api/browse?path=' + encodeURIComponent(dirPath));
+    const j = await r.json();
+    if (!r.ok) {
+      if (dirPath !== '/') { loadBrowseDir('/'); return; }
+      listEl.innerHTML = '<div style="padding:8px 14px;color:#e0a0a0;font-size:12px">' + (j.error || 'Error') + '</div>';
+      return;
+    }
+    let html = '';
+    if (j.parent !== null) {
+      html += '<div class="browse-item" onclick="loadBrowseDir(' + JSON.stringify(j.parent) + ')">' +
+        '<span style="font-size:14px">📂</span><span style="color:#9aa0a6">..</span></div>';
+    }
+    for (const item of j.items) {
+      if (item.isDir) {
+        html += '<div class="browse-item" onclick="loadBrowseDir(' + JSON.stringify(item.path) + ')">' +
+          '<span style="font-size:14px">📁</span><span style="color:#8be9fd">' + item.name + '</span></div>';
+      } else {
+        html += '<div class="browse-item file" onclick="selectBrowsedPath(' + JSON.stringify(item.path) + ')">' +
+          '<span style="font-size:14px">📄</span><span style="color:#c6c9cc">' + item.name + '</span></div>';
+      }
+    }
+    if (!j.items.length) {
+      html += '<div style="padding:8px 14px;color:#5a6172;font-size:12px">Empty directory</div>';
+    }
+    listEl.innerHTML = html;
+  } catch (e) {
+    if (dirPath !== '/') { loadBrowseDir('/'); return; }
+    listEl.innerHTML = '<div style="padding:8px 14px;color:#e0a0a0;font-size:12px">Failed: ' + e + '</div>';
+  }
+}
+
+function selectBrowsedPath(p) {
+  if (_browseTarget) document.getElementById(_browseTarget).value = p;
+  closeBrowser();
+}
+
+function selectBrowsed() {
+  if (_browseTarget) document.getElementById(_browseTarget).value = _browseCurrent;
+  closeBrowser();
+}
+
+// Close modal on backdrop click
+document.getElementById('browse-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeBrowser();
+});
+
+// ---- Bitwarden CLI ----
+let _bwItems = [];
+
+async function bwRefreshStatus() {
+  try {
+    const r = await fetch('api/bitwarden/status');
+    const j = await r.json();
+    renderBwStatus(j);
+  } catch {
+    document.getElementById('bw-status-kv').innerHTML =
+      '<span class="k">Status</span><span class="pill red">error</span>';
+  }
+}
+
+function renderBwStatus(s) {
+  const map = {
+    not_installed: ['grey', 'not installed'],
+    unauthenticated: ['amber', 'not logged in'],
+    locked: ['amber', 'locked'],
+    unlocked: ['green', 'unlocked'],
+  };
+  const [cls, label] = map[s.status] || ['grey', s.status];
+  let html = '<span class="k">Status</span><span><span class="pill ' + cls + '">' + label + '</span></span>';
+  if (s.userEmail) html += '<span class="k">Account</span><span>' + s.userEmail + '</span>';
+  if (s.lastSync) html += '<span class="k">Last sync</span><span>' + new Date(s.lastSync).toLocaleString() + '</span>';
+  document.getElementById('bw-status-kv').innerHTML = html;
+  const active = s.status === 'unlocked' && s.sessionActive;
+  const showUnlock = !active && s.status !== 'not_installed';
+  document.getElementById('bw-unlock-section').style.display = showUnlock ? 'block' : 'none';
+  document.getElementById('bw-controls-section').style.display = active ? 'block' : 'none';
+}
+
+async function bwUnlock() {
+  const password = document.getElementById('bw-password').value;
+  if (!password) { msg('bw-msg', 'Master password is required', false); return; }
+  spin(true, 'Unlocking vault…');
+  try {
+    const r = await post('api/bitwarden/unlock', { password });
+    if (r.ok) {
+      document.getElementById('bw-password').value = '';
+      renderBwStatus(r.data.status);
+      msg('bw-msg', 'Vault unlocked.', true);
+    } else {
+      msg('bw-msg', r.data.error || 'Unlock failed', false);
+    }
+  } catch (e) { msg('bw-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function bwLock() {
+  const r = await post('api/bitwarden/lock', {});
+  if (r.ok) {
+    _bwItems = [];
+    document.getElementById('bw-items').innerHTML = '';
+    await bwRefreshStatus();
+    msg('bw-msg', 'Vault locked.', true);
+  } else {
+    msg('bw-msg', 'Lock failed', false);
+  }
+}
+
+async function bwSync() {
+  spin(true, 'Syncing vault…');
+  try {
+    const r = await post('api/bitwarden/sync', {});
+    if (r.ok) {
+      await bwRefreshStatus();
+      msg('bw-msg', 'Vault synced.', true);
+    } else {
+      msg('bw-msg', r.data.error || 'Sync failed', false);
+    }
+  } catch (e) { msg('bw-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
+async function bwSearch() {
+  const q = document.getElementById('bw-search').value.trim();
+  const itemsEl = document.getElementById('bw-items');
+  itemsEl.innerHTML = '<span style="color:#9aa0a6;font-size:12px">Searching…</span>';
+  try {
+    const r = await fetch('api/bitwarden/items?search=' + encodeURIComponent(q));
+    const j = await r.json();
+    if (!r.ok) {
+      itemsEl.innerHTML = '<span style="color:#e0a0a0;font-size:12px">' + (j.error || 'Error') + '</span>';
+      return;
+    }
+    _bwItems = j.items;
+    if (!j.items.length) {
+      itemsEl.innerHTML = '<span style="color:#5a6172;font-size:12px">No items found.</span>';
+      return;
+    }
+    itemsEl.innerHTML = j.items.map(item => {
+      const username = item.login?.username ? '<span style="color:#7a8190;font-size:11px">' + item.login.username + '</span>' : '';
+      const copyBtn = item.login?.password
+        ? '<button onclick="bwCopyPass(\'' + item.id + '\')" style="font-size:11px;padding:2px 8px;background:#2a4a2a;border-color:#3a6a3a">Copy password</button>'
+        : '';
+      return '<div class="backup-row" style="flex-direction:column;align-items:flex-start;gap:3px;padding:6px 0">' +
+        '<div style="display:flex;align-items:center;gap:8px;width:100%">' +
+        '<span style="color:#e8eaed;font-size:12px;flex:1">' + item.name + '</span>' + copyBtn + '</div>' +
+        (username ? username : '') + '</div>';
+    }).join('');
+  } catch (e) {
+    itemsEl.innerHTML = '<span style="color:#e0a0a0;font-size:12px">Error: ' + e + '</span>';
+  }
+}
+
+async function bwCopyPass(itemId) {
+  const item = _bwItems.find(i => i.id === itemId);
+  if (item?.login?.password) {
+    try {
+      await navigator.clipboard.writeText(item.login.password);
+      msg('bw-msg', 'Password copied to clipboard.', true);
+    } catch (e) { msg('bw-msg', 'Clipboard unavailable: ' + e, false); }
+  } else {
+    msg('bw-msg', 'No password for this item', false);
+  }
+}
+
+bwRefreshStatus();
 </script>
 </body></html>

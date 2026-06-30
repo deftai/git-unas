@@ -2,7 +2,8 @@
   "assets": [
     "public/**/*",
     "node_modules/express/**",
-    "node_modules/node-cron/**"
+    "node_modules/node-cron/**",
+    "package.json"
   ],
   "scripts": [
     "dist/**/*.js"
