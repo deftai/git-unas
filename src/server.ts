@@ -32,9 +32,11 @@ app.use('/api/bitwarden', bitwardenRouter);
 app.use('/api/browse', browseRouter);
 
 // Serve admin UI
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// PUBLIC_DIR env var overrides the default (set in /etc/default/git-unas when installed as .deb)
+const PUBLIC_DIR = process.env.PUBLIC_DIR ?? path.join(__dirname, '..', 'public');
+app.use(express.static(PUBLIC_DIR));
 app.get(/.*/, (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 export { app };
