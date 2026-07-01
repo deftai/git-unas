@@ -72,7 +72,7 @@ function runCmd(cmd: string, args: string[], extraEnv?: Record<string, string>):
   });
 }
 
-function runBw(args: string[], extraEnv?: Record<string, string>): Promise<string> {
+export function runBw(args: string[], extraEnv?: Record<string, string>): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn(bwBin(), args, {
       stdio: ['ignore', 'pipe', 'pipe'],

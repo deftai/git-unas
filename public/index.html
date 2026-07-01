@@ -492,7 +492,56 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
     <div id="bw-items" style="margin-top:6px"></div>
   </div>
 </div>
-<div class="msg" id="bw-msg"></div></div>
+<div class="msg" id="bw-msg"></div>
+
+<!-- Bitwarden Archive sub-section -->
+<div id="bw-archive-section" style="margin-top:14px;border-top:1px solid #2a3140;padding-top:12px">
+  <div style="font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Vault Archive</div>
+  <div class="kv" id="bw-arch-status-kv"></div>
+  <div style="margin-top:8px">
+    <div class="row"><label>Output dir</label>
+      <input type="text" id="bw-arch-dir" placeholder="/srv/backups/bitwarden">
+      <button class="browse-btn" onclick="openBrowser('bw-arch-dir')" title="Browse">📁</button>
+    </div>
+    <div class="row"><label>Master password</label>
+      <input type="password" id="bw-arch-pass" placeholder="stored encrypted — re-enter to update" autocomplete="current-password">
+    </div>
+    <div class="row"><label>Frequency</label>
+      <select id="bw-arch-freq">
+        <option value="daily">Daily (2am)</option>
+        <option value="hourly">Hourly</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+    </div>
+    <div class="row"><label>Retention</label>
+      <select id="bw-arch-retention">
+        <option value="7">7 days</option>
+        <option value="14">14 days</option>
+        <option value="30">30 days</option>
+        <option value="60">60 days</option>
+        <option value="90">90 days</option>
+        <option value="180">180 days</option>
+      </select>
+    </div>
+    <div class="row"><label>Enable</label>
+      <select id="bw-arch-enabled">
+        <option value="false">Disabled</option>
+        <option value="true">Enabled</option>
+      </select>
+    </div>
+    <div class="row">
+      <button onclick="bwArchSave()">Save config</button>
+      <button onclick="bwArchRun()" style="background:#111621;border-color:#3a4255;color:#c6c9cc">▶ Run now</button>
+    </div>
+  </div>
+  <div style="margin-top:8px">
+    <div style="font-size:11px;color:#9aa0a6;margin-bottom:4px">Run history</div>
+    <div id="bw-arch-history"></div>
+  </div>
+  <div class="msg" id="bw-arch-msg"></div>
+</div>
+</div>
 
 <!-- Admin Panel -->
 <div class="card" id="admin-card" style="display:none"><h2>Administration</h2>
@@ -1289,6 +1338,67 @@ async function bwCopyPass(itemId) {
   }
 }
 
+// ---- Bitwarden Archive ----
+async function bwArchLoad() {
+  try {
+    const r = await fetch('api/bitwarden/archive/config');
+    const c = await r.json();
+    if (!r.ok) return;
+    document.getElementById('bw-arch-dir').value = c.baseDir || '';
+    document.getElementById('bw-arch-freq').value = c.frequency || 'daily';
+    document.getElementById('bw-arch-retention').value = String(c.retentionDays || 30);
+    document.getElementById('bw-arch-enabled').value = String(c.enabled);
+    const kv = document.getElementById('bw-arch-status-kv');
+    const pwStatus = c.passwordSet
+      ? '<span class="pill green">password stored</span>'
+      : '<span class="pill amber">no password stored</span>';
+    const schedStatus = c.enabled
+      ? '<span class="pill green">enabled</span>'
+      : '<span class="pill grey">disabled</span>';
+    kv.innerHTML = `<span class="k">Schedule</span><span>${schedStatus}</span><span class="k">Auto-unlock</span><span>${pwStatus}</span>`;
+  } catch {}
+  bwArchLoadHistory();
+}
+
+async function bwArchLoadHistory() {
+  try {
+    const r = await fetch('api/bitwarden/archive/runs');
+    const runs = await r.json();
+    const el = document.getElementById('bw-arch-history');
+    if (!runs.length) { el.innerHTML = '<span style="color:#5a6172;font-size:12px">No runs yet.</span>'; return; }
+    el.innerHTML = '<table class="run-table"><thead><tr><th>Time</th><th>Duration</th><th>Status</th><th>File</th></tr></thead><tbody>' +
+      runs.slice(0, 10).map(r => {
+        const cls = r.status === 'ok' ? 'green' : r.status === 'skipped' ? 'amber' : 'red';
+        const file = r.status === 'ok' ? `<span style="color:#7a8190;font-size:11px">${r.message}</span>` : `<span style="color:#9aa0a6;font-size:11px">${r.message}</span>`;
+        return `<tr><td style="white-space:nowrap;color:#9aa0a6">${new Date(r.startedAt).toLocaleString()}</td><td style="color:#9aa0a6">${Math.round(r.durationMs/1000)}s</td><td><span class="pill ${cls}">${r.status}</span></td><td>${file}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  } catch {}
+}
+
+async function bwArchSave() {
+  const baseDir = document.getElementById('bw-arch-dir').value.trim();
+  const password = document.getElementById('bw-arch-pass').value || undefined;
+  const frequency = document.getElementById('bw-arch-freq').value;
+  const retentionDays = parseInt(document.getElementById('bw-arch-retention').value, 10);
+  const enabled = document.getElementById('bw-arch-enabled').value === 'true';
+  if (!baseDir) { msg('bw-arch-msg', 'Output directory is required', false); return; }
+  const r = await post('api/bitwarden/archive/config', { baseDir, frequency, retentionDays, enabled, password });
+  if (r.ok) { document.getElementById('bw-arch-pass').value = ''; bwArchLoad(); }
+  msg('bw-arch-msg', r.ok ? 'Config saved.' : (r.data.error || 'Failed'), r.ok);
+}
+
+async function bwArchRun() {
+  spin(true, 'Running Bitwarden export…');
+  try {
+    const r = await post('api/bitwarden/archive/run', {});
+    bwArchLoadHistory();
+    const status = r.data.run?.status ?? 'error';
+    const message = r.data.run?.message ?? (r.data.error || 'Failed');
+    msg('bw-arch-msg', status === 'ok' ? `Export saved: ${message}` : message, status === 'ok');
+  } catch (e) { msg('bw-arch-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
 // moved to appInit
 
 // ---- Authentication ----
@@ -1335,6 +1445,7 @@ function appInit() {
   loadSchedule(); setInterval(loadSchedule, 30000);
   loadArchConfig(); setInterval(loadArchStatus, 60000);
   bwRefreshStatus();
+  bwArchLoad();
 }
 
 async function doSetup() {

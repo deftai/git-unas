@@ -9,6 +9,18 @@ import {
   loginBw,
   logoutBw,
 } from '../services/bitwardenService';
+import {
+  loadBwArchiveConfig,
+  saveBwArchiveConfig,
+  maskedBwArchiveConfig,
+  loadBwArchiveRuns,
+  runBwExport,
+  startBwArchiveScheduler,
+  encryptPassword,
+  type BwArchiveFrequency,
+} from '../services/bitwardenArchiveService';
+
+const VALID_BW_FREQS: BwArchiveFrequency[] = ['hourly', 'daily', 'weekly', 'monthly'];
 
 export const bitwardenRouter = Router();
 
@@ -92,6 +104,57 @@ bitwardenRouter.post('/login', async (req: Request, res: Response) => {
 bitwardenRouter.post('/logout', async (_req: Request, res: Response) => {
   await logoutBw();
   res.json({ success: true });
+});
+
+// ---------------------------------------------------------------------------
+// Bitwarden Archive
+// ---------------------------------------------------------------------------
+
+// GET /api/bitwarden/archive/config
+bitwardenRouter.get('/archive/config', (_req: Request, res: Response) => {
+  res.json(maskedBwArchiveConfig(loadBwArchiveConfig()));
+});
+
+// POST /api/bitwarden/archive/config
+bitwardenRouter.post('/archive/config', (req: Request, res: Response) => {
+  const body = req.body as {
+    baseDir?: string; frequency?: string; retentionDays?: number;
+    enabled?: boolean; password?: string;
+  };
+  const current = loadBwArchiveConfig();
+  const frequency = (body.frequency ?? current.frequency) as BwArchiveFrequency;
+  if (!VALID_BW_FREQS.includes(frequency)) {
+    res.status(400).json({ error: `frequency must be one of: ${VALID_BW_FREQS.join(', ')}` }); return;
+  }
+  const retentionDays = body.retentionDays !== undefined ? Number(body.retentionDays) : current.retentionDays;
+  if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 180) {
+    res.status(400).json({ error: 'retentionDays must be 1–180' }); return;
+  }
+  const updated = {
+    baseDir: typeof body.baseDir === 'string' ? body.baseDir : current.baseDir,
+    frequency,
+    retentionDays,
+    enabled: typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
+    encryptedPassword: body.password ? encryptPassword(body.password) : current.encryptedPassword,
+  };
+  saveBwArchiveConfig(updated);
+  startBwArchiveScheduler(updated);
+  res.json({ success: true, config: maskedBwArchiveConfig(updated) });
+});
+
+// POST /api/bitwarden/archive/run
+bitwardenRouter.post('/archive/run', async (_req: Request, res: Response) => {
+  try {
+    const run = await runBwExport();
+    res.json({ success: run.status !== 'error', run });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// GET /api/bitwarden/archive/runs
+bitwardenRouter.get('/archive/runs', (_req: Request, res: Response) => {
+  res.json(loadBwArchiveRuns());
 });
 
 // GET /api/bitwarden/items?search=<query>

@@ -12,6 +12,7 @@ import { authRouter } from './routes/auth';
 import { requireAuth } from './middleware/requireAuth';
 import { loadConfig, startScheduler } from './services/scheduleService';
 import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
+import { loadBwArchiveConfig, startBwArchiveScheduler } from './services/bitwardenArchiveService';
 import pkgJson from '../package.json';
 
 const app = express();
@@ -67,6 +68,7 @@ if (require.main === module) {
   // Auto-start schedulers from persisted config
   startScheduler(loadConfig());
   startArchiveScheduler(loadArchiveConfig());
+  startBwArchiveScheduler(loadBwArchiveConfig());
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`git-unas admin server listening on http://127.0.0.1:${PORT}`);
