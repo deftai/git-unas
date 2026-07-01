@@ -427,11 +427,11 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
   <input type="password" id="bw-login-pass" placeholder="master password" autocomplete="current-password"></div>
   <div id="bw-2fa-row" style="display:none">
     <div class="row"><label>2FA code</label>
-    <input type="text" id="bw-2fa" placeholder="TOTP code or tap YubiKey" autocomplete="one-time-code"></div>
+    <input type="text" id="bw-2fa" placeholder="6-digit code" style="width:120px;flex:none" maxlength="8" inputmode="numeric" autocomplete="one-time-code"></div>
   </div>
   <div class="row" style="gap:6px">
     <button onclick="bwLogin()">Log in</button>
-    <button onclick="document.getElementById('bw-2fa-row').style.display='block';document.getElementById('bw-2fa').focus()" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Use 2FA / YubiKey</button>
+    <button onclick="document.getElementById('bw-2fa-row').style.display='block'" style="background:#111621;border-color:#3a4255;color:#9aa0a6;font-size:12px">Use 2FA code</button>
   </div>
 </div>
 
