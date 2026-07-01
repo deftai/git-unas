@@ -271,8 +271,12 @@ export async function loginBw(
 ): Promise<void> {
   const loginArgs = ['login', email, password, '--raw'];
   if (twoFactorCode?.trim()) {
-    // Method 0 = authenticator app TOTP; method 1 = email OTP
-    loginArgs.push('--method', '0', '--code', twoFactorCode.trim());
+    // Auto-detect 2FA method by code format:
+    //   method 0 = TOTP (authenticator app) — digits only
+    //   method 3 = YubiKey OTP              — modhex letters only
+    const code = twoFactorCode.trim();
+    const method = /^[0-9]+$/.test(code) ? '0' : '3';
+    loginArgs.push('--method', method, '--code', code);
   }
   try {
     await runBw(loginArgs);
