@@ -5,8 +5,11 @@ import { tarRouter } from './routes/tar';
 import { encryptRouter } from './routes/encrypt';
 import { scheduleRouter } from './routes/schedule';
 import { archiveRouter } from './routes/archive';
+import { bitwardenRouter } from './routes/bitwarden';
+import { browseRouter } from './routes/browse';
 import { loadConfig, startScheduler } from './services/scheduleService';
 import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
+import pkgJson from '../package.json';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 7892;
@@ -22,13 +25,18 @@ app.use('/api/archive', archiveRouter);
 
 // Health check
 app.get('/api/status', (_req, res) => {
-  res.json({ status: 'ok', version: process.env.npm_package_version ?? '0.0.0' });
+  res.json({ status: 'ok', version: pkgJson.version });
 });
 
+app.use('/api/bitwarden', bitwardenRouter);
+app.use('/api/browse', browseRouter);
+
 // Serve admin UI
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// PUBLIC_DIR env var overrides the default (set in /etc/default/git-unas when installed as .deb)
+const PUBLIC_DIR = process.env.PUBLIC_DIR ?? path.join(__dirname, '..', 'public');
+app.use(express.static(PUBLIC_DIR));
 app.get(/.*/, (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 export { app };

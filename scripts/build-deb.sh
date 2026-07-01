@@ -1,8 +1,11 @@
 #!/bin/sh
 # build-deb.sh — build dist/git-unas_<version>_arm64.deb
-# Must be run after `npm run build` and `npm run build:binary`.
+# Must be run after `npm run build` and `npm run build:bundle`.
 # Usage: scripts/build-deb.sh [--arch arm64] [--version X.Y.Z]
 set -e
+
+# Node.js version to bundle (must match the target device's expected runtime)
+NODE_VERSION="22.22.3"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH=arm64
@@ -25,19 +28,42 @@ echo "==> Building git-unas_${VERSION}_${ARCH}.deb"
 
 STAGE="${REPO_ROOT}/dist/deb-stage"
 DEB_OUT="${REPO_ROOT}/dist/git-unas_${VERSION}_${ARCH}.deb"
-BINARY="${REPO_ROOT}/dist/git-unas-arm64"
+BUNDLE="${REPO_ROOT}/dist/bundle/index.js"
 
-if [ ! -f "$BINARY" ]; then
-    echo "ERROR: binary not found at $BINARY — run 'npm run build:binary' first" >&2
+if [ ! -f "$BUNDLE" ]; then
+    echo "ERROR: bundle not found at $BUNDLE — run 'npm run build && npm run build:bundle' first" >&2
     exit 1
 fi
 
 # ---- Clean and stage ----
 rm -rf "$STAGE"
 
-# /usr/bin/
+# Download Node.js ARM64 Linux binary if not already cached
+NODE_TARBALL="${REPO_ROOT}/dist/node-${NODE_VERSION}-linux-arm64.tar.gz"
+NODE_BIN="${REPO_ROOT}/dist/node-linux-arm64"
+if [ ! -f "$NODE_BIN" ]; then
+    echo "==> Downloading Node.js ${NODE_VERSION} (linux-arm64)..."
+    curl -fsSL -o "$NODE_TARBALL" \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-arm64.tar.gz"
+    tar -xzf "$NODE_TARBALL" -C "${REPO_ROOT}/dist" \
+        "node-v${NODE_VERSION}-linux-arm64/bin/node"
+    mv "${REPO_ROOT}/dist/node-v${NODE_VERSION}-linux-arm64/bin/node" "$NODE_BIN"
+    rm -rf "${REPO_ROOT}/dist/node-v${NODE_VERSION}-linux-arm64" "$NODE_TARBALL"
+fi
+
+# /usr/lib/git-unas/ (Node.js binary + JS bundle + static files)
+mkdir -p "${STAGE}/usr/lib/git-unas"
+cp "$NODE_BIN" "${STAGE}/usr/lib/git-unas/node"
+chmod 0755 "${STAGE}/usr/lib/git-unas/node"
+cp "$BUNDLE" "${STAGE}/usr/lib/git-unas/index.js"
+cp -r "${REPO_ROOT}/public" "${STAGE}/usr/lib/git-unas/public"
+
+# /usr/bin/ (shell launcher)
 mkdir -p "${STAGE}/usr/bin"
-cp "$BINARY" "${STAGE}/usr/bin/git-unas"
+cat > "${STAGE}/usr/bin/git-unas" << 'EOF'
+#!/bin/sh
+exec /usr/lib/git-unas/node /usr/lib/git-unas/index.js
+EOF
 chmod 0755 "${STAGE}/usr/bin/git-unas"
 
 # /lib/systemd/system/

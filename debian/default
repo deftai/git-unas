@@ -17,3 +17,9 @@ ARCHIVE_RUNS_PATH=/etc/git-unas/archive-runs.json
 
 # GitHub archive push-timestamp cache (enables symlink shortcuts for unchanged repos)
 ARCHIVE_CACHE_PATH=/etc/git-unas/archive-cache.json
+
+# Static files directory (index.html, CSS, JS)
+PUBLIC_DIR=/usr/lib/git-unas/public
+
+# Bitwarden CLI install directory (firmware-survivable on UniFi OS)
+BW_INSTALL_DIR=/data/git-unas
