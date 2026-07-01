@@ -2,7 +2,7 @@ import * as cron from 'node-cron';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { runBw, getBwStatus, unlockVault } from './bitwardenService';
+import { runBw, getBwStatus, unlockVault, getSessionKey } from './bitwardenService';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -229,7 +229,9 @@ export async function runBwExport(): Promise<BwArchiveRun> {
     if (!fs.existsSync(config.baseDir)) fs.mkdirSync(config.baseDir, { recursive: true });
     const outputPath = makeExportPath(config.baseDir);
 
-    await runBw(['export', '--format', 'encrypted_json', '--output', outputPath]);
+    const sessionKey = getSessionKey();
+    if (!sessionKey) throw new Error('No active session after unlock — export aborted');
+    await runBw(['export', '--format', 'encrypted_json', '--output', outputPath], { BW_SESSION: sessionKey });
 
     pruneOldExports(config.baseDir, config.retentionDays);
 

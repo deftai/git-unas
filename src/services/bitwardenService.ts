@@ -44,6 +44,8 @@ export interface BwItem {
 
 let _sessionKey: string | null = null;
 
+export function getSessionKey(): string | null { return _sessionKey; }
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

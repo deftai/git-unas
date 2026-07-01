@@ -1,6 +1,6 @@
 {
   "name": "git-unas",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Node.js/TypeScript web admin page for Ubiquiti UNAS — git clone, tar, and encryption",
   "main": "dist/server.js",
   "scripts": {
