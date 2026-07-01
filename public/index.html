@@ -1123,8 +1123,7 @@ async function loadBrowseDir(dirPath) {
     const r = await fetch('api/browse?path=' + encodeURIComponent(dirPath));
     const j = await r.json();
     if (!r.ok) {
-      if (dirPath !== '/') { loadBrowseDir('/'); return; }
-      listEl.innerHTML = '<div style="padding:8px 14px;color:#e0a0a0;font-size:12px">' + (j.error || 'Error') + '</div>';
+      listEl.innerHTML = '<div style="padding:8px 14px;color:#e0a0a0;font-size:12px">' + (j.error || 'Cannot read directory') + '</div>';
       return;
     }
     let html = '';

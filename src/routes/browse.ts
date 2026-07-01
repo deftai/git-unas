@@ -31,11 +31,14 @@ browseRouter.get('/', (req: Request, res: Response) => {
     const rawEntries = fs.readdirSync(dirPath, { withFileTypes: true });
     const items: BrowseItem[] = rawEntries
       .filter((e) => !e.name.startsWith('.')) // hide hidden entries
-      .map((e) => ({
-        name: e.name,
-        isDir: e.isDirectory() || e.isSymbolicLink(),
-        path: path.join(dirPath, e.name),
-      }))
+      .map((e) => {
+        const fullPath = path.join(dirPath, e.name);
+        let isDir = e.isDirectory();
+        if (!isDir && e.isSymbolicLink()) {
+          try { isDir = fs.statSync(fullPath).isDirectory(); } catch { isDir = false; }
+        }
+        return { name: e.name, isDir, path: fullPath };
+      })
       .sort((a, b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
         return a.name.localeCompare(b.name);
