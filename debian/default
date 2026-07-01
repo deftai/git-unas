@@ -23,3 +23,8 @@ PUBLIC_DIR=/usr/lib/git-unas/public
 
 # Bitwarden CLI install directory (firmware-survivable on UniFi OS)
 BW_INSTALL_DIR=/data/git-unas
+
+# Web UI authentication
+AUTH_USERS_PATH=/etc/git-unas/users.json
+AUTH_LOG_PATH=/etc/git-unas/auth-log.json
+# AUTH_SECRET is generated on first install — see /etc/default/git-unas.local

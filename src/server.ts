@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import session from 'express-session';
 import { gitRouter } from './routes/git';
 import { tarRouter } from './routes/tar';
 import { encryptRouter } from './routes/encrypt';
@@ -7,14 +8,35 @@ import { scheduleRouter } from './routes/schedule';
 import { archiveRouter } from './routes/archive';
 import { bitwardenRouter } from './routes/bitwarden';
 import { browseRouter } from './routes/browse';
+import { authRouter } from './routes/auth';
+import { requireAuth } from './middleware/requireAuth';
 import { loadConfig, startScheduler } from './services/scheduleService';
 import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
 import pkgJson from '../package.json';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 7892;
+const AUTH_SECRET = process.env.AUTH_SECRET ?? 'change-me-in-production';
 
 app.use(express.json());
+
+// Session middleware
+app.use(session({
+  secret: AUTH_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'strict',
+    maxAge: 8 * 60 * 60 * 1000, // 8 hours
+  },
+}));
+
+// Auth routes (unprotected — login/setup/me)
+app.use('/api/auth', authRouter);
+
+// All other /api/* routes require authentication
+app.use('/api', requireAuth);
 
 // API routes
 app.use('/api/git', gitRouter);

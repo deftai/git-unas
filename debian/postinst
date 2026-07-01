@@ -11,6 +11,14 @@ case "$1" in
         mkdir -p "$CONFIG_DIR"
         chmod 700 "$CONFIG_DIR"
 
+        # Generate AUTH_SECRET on first install if not already set.
+        LOCAL_DEFAULTS=/etc/default/git-unas.local
+        if ! grep -q 'AUTH_SECRET' "$LOCAL_DEFAULTS" 2>/dev/null; then
+            SECRET=$(openssl rand -hex 32 2>/dev/null || cat /proc/sys/kernel/random/uuid | tr -d '-')
+            mkdir -p "$(dirname $LOCAL_DEFAULTS)"
+            echo "AUTH_SECRET=${SECRET}" >> "$LOCAL_DEFAULTS"
+        fi
+
         # Inject nginx proxy block (best effort — non-fatal on non-UNAS).
         if [ -x "$LIBEXEC/nginx-inject.sh" ]; then
             "$LIBEXEC/nginx-inject.sh" || true
