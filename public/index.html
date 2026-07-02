@@ -1127,16 +1127,17 @@ async function loadBrowseDir(dirPath) {
       return;
     }
     let html = '';
+    const bq = p => p.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     if (j.parent !== null) {
-      html += '<div class="browse-item" onclick="loadBrowseDir(' + JSON.stringify(j.parent) + ')">' +
+      html += '<div class="browse-item" onclick="loadBrowseDir(\'' + bq(j.parent) + '\')">' +
         '<span style="font-size:14px">📂</span><span style="color:#9aa0a6">..</span></div>';
     }
     for (const item of j.items) {
       if (item.isDir) {
-        html += '<div class="browse-item" onclick="loadBrowseDir(' + JSON.stringify(item.path) + ')">' +
+        html += '<div class="browse-item" onclick="loadBrowseDir(\'' + bq(item.path) + '\')">' +
           '<span style="font-size:14px">📁</span><span style="color:#8be9fd">' + item.name + '</span></div>';
       } else {
-        html += '<div class="browse-item file" onclick="selectBrowsedPath(' + JSON.stringify(item.path) + ')">' +
+        html += '<div class="browse-item file" onclick="selectBrowsedPath(\'' + bq(item.path) + '\')">' +
           '<span style="font-size:14px">📄</span><span style="color:#c6c9cc">' + item.name + '</span></div>';
       }
     }
