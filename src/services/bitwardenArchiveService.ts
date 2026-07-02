@@ -31,6 +31,8 @@ export interface BwArchiveConfig {
   enabled: boolean;
   /** AES-256-GCM encrypted master password (base64). Empty string = not set. */
   encryptedPassword: string;
+  /** Bitwarden account email — required for offline PBKDF2 key derivation. Auto-populated from bw status. */
+  accountEmail: string;
 }
 
 export interface BwArchiveRun {
@@ -83,6 +85,7 @@ const DEFAULT_CONFIG: BwArchiveConfig = {
   retentionDays: 30,
   enabled: false,
   encryptedPassword: '',
+  accountEmail: '',
 };
 
 export function loadBwArchiveConfig(): BwArchiveConfig {
@@ -234,6 +237,15 @@ export async function runBwExport(): Promise<BwArchiveRun> {
     await runBw(['export', '--format', 'encrypted_json', '--output', outputPath], { BW_SESSION: sessionKey });
 
     pruneOldExports(config.baseDir, config.retentionDays);
+
+    // Persist account email for offline decryption key derivation
+    try {
+      const latestStatus = await getBwStatus();
+      if (latestStatus.userEmail && latestStatus.userEmail !== config.accountEmail) {
+        config.accountEmail = latestStatus.userEmail;
+        saveBwArchiveConfig(config);
+      }
+    } catch { /* best-effort; email will be populated on next run */ }
 
     const run: BwArchiveRun = {
       id: crypto.randomUUID(), startedAt,

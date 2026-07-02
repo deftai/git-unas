@@ -17,8 +17,10 @@ import {
   runBwExport,
   startBwArchiveScheduler,
   encryptPassword,
+  decryptPassword,
   type BwArchiveFrequency,
 } from '../services/bitwardenArchiveService';
+import { decryptBwExport } from '../services/bitwardenDecryptService';
 
 const VALID_BW_FREQS: BwArchiveFrequency[] = ['hourly', 'daily', 'weekly', 'monthly'];
 
@@ -136,6 +138,7 @@ bitwardenRouter.post('/archive/config', (req: Request, res: Response) => {
     retentionDays,
     enabled: typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
     encryptedPassword: body.password ? encryptPassword(body.password) : current.encryptedPassword,
+    accountEmail: current.accountEmail,
   };
   saveBwArchiveConfig(updated);
   startBwArchiveScheduler(updated);
@@ -155,6 +158,52 @@ bitwardenRouter.post('/archive/run', async (_req: Request, res: Response) => {
 // GET /api/bitwarden/archive/runs
 bitwardenRouter.get('/archive/runs', (_req: Request, res: Response) => {
   res.json(loadBwArchiveRuns());
+});
+
+// POST /api/bitwarden/archive/decrypt  { filePath: string }
+// Decrypts a Bitwarden encrypted_json export offline using stored credentials.
+bitwardenRouter.post('/archive/decrypt', async (req: Request, res: Response) => {
+  const { filePath } = req.body as { filePath?: string };
+  if (!filePath) {
+    res.status(400).json({ error: 'filePath is required' }); return;
+  }
+
+  const config = loadBwArchiveConfig();
+
+  // Path-traversal guard: filePath must resolve within configured baseDir
+  if (!config.baseDir) {
+    res.status(400).json({ error: 'Archive base directory is not configured' }); return;
+  }
+  const path = await import('path');
+  const resolved = path.resolve(filePath);
+  const base = path.resolve(config.baseDir);
+  if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+    res.status(403).json({ error: 'filePath must be within the configured archive directory' }); return;
+  }
+
+  if (!config.accountEmail) {
+    res.status(400).json({
+      error: 'Account email is not stored — run a scheduled export first so the email is captured automatically',
+    }); return;
+  }
+  if (!config.encryptedPassword) {
+    res.status(400).json({ error: 'Master password is not stored — set it in Vault Archive settings' }); return;
+  }
+
+  let masterPassword: string;
+  try {
+    masterPassword = decryptPassword(config.encryptedPassword);
+  } catch {
+    res.status(500).json({ error: 'Failed to decrypt stored master password' }); return;
+  }
+
+  try {
+    const vault = await decryptBwExport(resolved, masterPassword, config.accountEmail);
+    res.json(vault);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: message });
+  }
 });
 
 // GET /api/bitwarden/items?search=<query>

@@ -540,6 +540,26 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
     <div id="bw-arch-history"></div>
   </div>
   <div class="msg" id="bw-arch-msg"></div>
+
+  <!-- Offline Decrypt sub-section -->
+  <div style="margin-top:12px;border-top:1px solid #1e2535;padding-top:10px">
+    <div style="font-size:11px;color:#9aa0a6;margin-bottom:6px">Offline Decrypt</div>
+    <div id="bw-decrypt-hint" style="font-size:11px;color:#7a8190;margin-bottom:6px"></div>
+    <div class="row">
+      <label>Export file</label>
+      <select id="bw-decrypt-file" style="flex:1;min-width:0"></select>
+      <button onclick="bwDecrypt()">Decrypt</button>
+    </div>
+    <div id="bw-decrypt-panel" style="display:none;margin-top:8px">
+      <div id="bw-decrypt-summary" style="font-size:11px;color:#9aa0a6;margin-bottom:6px"></div>
+      <div class="row" style="gap:6px;margin-bottom:6px">
+        <input type="text" id="bw-decrypt-filter" placeholder="Filter items…" style="flex:1" oninput="bwDecryptFilter()">
+        <button onclick="bwDecryptDownload()" style="background:#111621;border-color:#3a4255;color:#c6c9cc;font-size:11px">⤓ Download JSON</button>
+      </div>
+      <div id="bw-decrypt-table" style="font-size:11px;max-height:300px;overflow-y:auto"></div>
+    </div>
+    <div class="msg" id="bw-decrypt-msg"></div>
+  </div>
 </div>
 </div>
 
@@ -1356,8 +1376,16 @@ async function bwArchLoad() {
       ? '<span class="pill green">enabled</span>'
       : '<span class="pill grey">disabled</span>';
     kv.innerHTML = `<span class="k">Schedule</span><span>${schedStatus}</span><span class="k">Auto-unlock</span><span>${pwStatus}</span>`;
+    // Decrypt hint: show stored email or prompt to run export first
+    const hintEl = document.getElementById('bw-decrypt-hint');
+    if (c.accountEmail) {
+      hintEl.innerHTML = 'Account: <span style="color:#c6c9cc">' + escHtml(c.accountEmail) + '</span>';
+    } else {
+      hintEl.textContent = 'Email not yet captured — run a Vault Archive export first.';
+    }
   } catch {}
   bwArchLoadHistory();
+  bwDecryptLoadFiles();
 }
 
 async function bwArchLoadHistory() {
@@ -1392,11 +1420,132 @@ async function bwArchRun() {
   try {
     const r = await post('api/bitwarden/archive/run', {});
     bwArchLoadHistory();
+    bwDecryptLoadFiles();
     const status = r.data.run?.status ?? 'error';
     const message = r.data.run?.message ?? (r.data.error || 'Failed');
     msg('bw-arch-msg', status === 'ok' ? `Export saved: ${message}` : message, status === 'ok');
+    if (status === 'ok') bwArchLoad(); // refresh email hint after successful run
   } catch (e) { msg('bw-arch-msg', 'Request failed: ' + e, false); }
   spin(false);
+}
+
+// ---- Offline Decrypt ----
+let _bwDecryptData = null;
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escJs(s) {
+  return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+
+async function bwDecryptLoadFiles() {
+  try {
+    const r = await fetch('api/bitwarden/archive/runs');
+    if (!r.ok) return;
+    const runs = await r.json();
+    const sel = document.getElementById('bw-decrypt-file');
+    const successRuns = runs.filter(run => run.status === 'ok' && run.filePath);
+    if (!successRuns.length) {
+      sel.innerHTML = '<option value="">No exports yet — run an export first</option>';
+      return;
+    }
+    sel.innerHTML = successRuns.map(run =>
+      `<option value="${escHtml(run.filePath)}">${escHtml(run.message)} — ${new Date(run.completedAt).toLocaleDateString()}</option>`
+    ).join('');
+  } catch {}
+}
+
+async function bwDecrypt() {
+  const filePath = document.getElementById('bw-decrypt-file').value;
+  if (!filePath) { msg('bw-decrypt-msg', 'Select an export file first', false); return; }
+  spin(true, 'Decrypting vault…');
+  try {
+    const r = await post('api/bitwarden/archive/decrypt', { filePath });
+    spin(false);
+    if (!r.ok) { msg('bw-decrypt-msg', r.data.error || 'Decryption failed', false); return; }
+    _bwDecryptData = r.data;
+    bwDecryptRender('');
+    document.getElementById('bw-decrypt-panel').style.display = '';
+    msg('bw-decrypt-msg', '', true);
+  } catch (e) {
+    spin(false);
+    msg('bw-decrypt-msg', String(e), false);
+  }
+}
+
+function bwDecryptFilter() {
+  bwDecryptRender(document.getElementById('bw-decrypt-filter').value);
+}
+
+const BW_TYPE_ICON = {1:'🔑',2:'📝',3:'💳',4:'🪹'};
+const BW_TYPE_NAME = {1:'Login',2:'Note',3:'Card',4:'Identity'};
+
+function bwDecryptRender(filter) {
+  if (!_bwDecryptData) return;
+  const items = _bwDecryptData.items || [];
+  const f = filter.trim().toLowerCase();
+
+  // Summary badge
+  const counts = {};
+  for (const item of items) counts[item.type] = (counts[item.type] || 0) + 1;
+  document.getElementById('bw-decrypt-summary').textContent =
+    Object.entries(counts).map(([t, n]) => `${n} ${BW_TYPE_NAME[t] || 'Other'}${n > 1 ? 's' : ''}`).join(' · ') +
+    ` (${items.length} total)`;
+
+  const filtered = f
+    ? items.filter(i => i.name.toLowerCase().includes(f) || (i.login?.username || '').toLowerCase().includes(f))
+    : items;
+
+  let html = '<table style="width:100%;border-collapse:collapse">' +
+    '<tr style="color:#5a6172;font-size:10px">' +
+    '<th style="text-align:left;padding:3px 6px">Name</th>' +
+    '<th style="text-align:left;padding:3px 6px">Username</th>' +
+    '<th style="text-align:left;padding:3px 6px">Password</th>' +
+    '<th style="text-align:left;padding:3px 6px">URL</th></tr>';
+
+  filtered.forEach((item, i) => {
+    const icon = BW_TYPE_ICON[item.type] || '•';
+    const user = item.login?.username || '';
+    const pass = item.login?.password || '';
+    const url = item.login?.uris?.[0]?.uri || '';
+    const pid = 'dp-' + i;
+    const host = url ? url.replace(/^https?:\/\//,'').split('/')[0] : '';
+    html += `<tr style="border-top:1px solid #1e2535">` +
+      `<td style="padding:3px 6px;color:#c6c9cc">${icon} ${escHtml(item.name)}</td>` +
+      `<td style="padding:3px 6px;color:#9aa0a6">${escHtml(user)}</td>` +
+      `<td style="padding:3px 6px">` +
+        (pass ? `<span id="${pid}" data-pass="${escHtml(pass)}" style="cursor:pointer;color:#7a8190;font-family:monospace" onclick="revealPass('${pid}')">••••••••</span>` : '') +
+      `</td>` +
+      `<td style="padding:3px 6px;color:#7a8190;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">` +
+        (host ? `<a href="${escHtml(url)}" target="_blank" rel="noopener" style="color:#6272a4;text-decoration:none">${escHtml(host)}</a>` : '') +
+      `</td></tr>`;
+  });
+  html += '</table>';
+  document.getElementById('bw-decrypt-table').innerHTML = html;
+}
+
+function revealPass(pid) {
+  const el = document.getElementById(pid);
+  if (!el) return;
+  if (el.dataset.revealed === '1') {
+    el.textContent = '••••••••';
+    el.dataset.revealed = '';
+  } else {
+    el.textContent = el.dataset.pass || '';
+    el.dataset.revealed = '1';
+  }
+}
+
+function bwDecryptDownload() {
+  if (!_bwDecryptData) return;
+  const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  const blob = new Blob([JSON.stringify(_bwDecryptData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bw-plaintext-${ts}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // moved to appInit
