@@ -8,11 +8,17 @@
  * kdfType = 1 (Argon2id) is detected and surfaces a clear error.
  *
  * Bitwarden EncString type 2 format:  2.<base64-iv>|<base64-ct>|<base64-mac>
- * Key derivation:
- *   masterKey   = PBKDF2-SHA256(password, email.toLowerCase(), iterations, 32)
- *   encKey      = HKDF-SHA256(masterKey, info="enc", 32)
- *   macKey      = HKDF-SHA256(masterKey, info="mac", 32)
- *   ciphertext  = AES-256-CBC(encKey, iv, data)  +  HMAC-SHA256(macKey, iv‖ct) verified
+ *
+ * Key derivation (two-step, matching Bitwarden's implementation):
+ *   masterKey        = PBKDF2-SHA256(password, email.toLowerCase(), iterations, 32)
+ *   stretchedEncKey  = HKDF-Expand(masterKey, info="enc", 32)  — EXPAND ONLY, not full HKDF
+ *   stretchedMacKey  = HKDF-Expand(masterKey, info="mac", 32)
+ *   userKey (64 B)   = decrypt(encKeyValidation_DO_NOT_EDIT, stretchedEncKey, stretchedMacKey)
+ *   dataEncKey       = userKey[0:32]
+ *   dataMacKey       = userKey[32:64]
+ *   vault JSON       = decrypt(data, dataEncKey, dataMacKey)
+ *
+ * HKDF-Expand T(1) = HMAC-SHA256(prk, info || 0x01)  [output ≤ 32 bytes → T(1) only]
  */
 
 import crypto from 'crypto';
@@ -81,26 +87,41 @@ interface BwExportFile {
 
 /**
  * Derive the 32-byte master key from master password + account email.
- * Matches Bitwarden's PBKDF2-SHA256 path (kdfType=0).
+ * Uses the async variant to avoid blocking the event loop during PBKDF2.
  */
-function deriveMasterKey(password: string, email: string, iterations: number): Buffer {
-  return crypto.pbkdf2Sync(
-    password,
-    email.toLowerCase().trim(),
-    iterations,
-    32,
-    'sha256',
-  );
+function deriveMasterKey(password: string, email: string, iterations: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(
+      password,
+      email.toLowerCase().trim(),
+      iterations,
+      32,
+      'sha256',
+      (err, key) => (err ? reject(err) : resolve(key)),
+    );
+  });
 }
 
 /**
- * Stretch the master key into separate enc and mac keys using HKDF-SHA256.
- * Bitwarden uses info strings "enc" and "mac" with an empty salt.
+ * HKDF-Expand only (no extract phase) — matches Bitwarden's hkdfExpand implementation.
+ * T(1) = HMAC-SHA256(prk, info || 0x01)  (sufficient for output ≤ 32 bytes)
  */
-function stretchKey(masterKey: Buffer): { encKey: Buffer; macKey: Buffer } {
-  const encKey = Buffer.from(crypto.hkdfSync('sha256', masterKey, Buffer.alloc(0), 'enc', 32));
-  const macKey = Buffer.from(crypto.hkdfSync('sha256', masterKey, Buffer.alloc(0), 'mac', 32));
-  return { encKey, macKey };
+function hkdfExpand(prk: Buffer, info: string, length: number): Buffer {
+  const hmac = crypto.createHmac('sha256', prk);
+  hmac.update(Buffer.from(info, 'utf8'));
+  hmac.update(Buffer.from([0x01]));
+  return hmac.digest().slice(0, length);
+}
+
+/**
+ * Stretch the master key into enc + mac keys using HKDF-Expand.
+ * These are used to decrypt the account enc key (encKeyValidation_DO_NOT_EDIT).
+ */
+function stretchMasterKey(masterKey: Buffer): { encKey: Buffer; macKey: Buffer } {
+  return {
+    encKey: hkdfExpand(masterKey, 'enc', 32),
+    macKey: hkdfExpand(masterKey, 'mac', 32),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,9 +166,9 @@ function decryptEncString(encString: string, encKey: Buffer, macKey: Buffer): Bu
 /**
  * Decrypt a Bitwarden `encrypted_json` export file offline.
  *
- * @param filePath     Absolute path to the .json export file
- * @param masterPassword  Bitwarden master password
- * @param email        Bitwarden account email (used as PBKDF2 salt)
+ * @param filePath       Absolute path to the .json export file
+ * @param masterPassword Bitwarden master password
+ * @param email          Bitwarden account email (used as PBKDF2 salt)
  * @returns Decrypted vault data containing folders and items
  */
 export async function decryptBwExport(
@@ -176,38 +197,58 @@ export async function decryptBwExport(
     throw new Error(`Unknown kdfType ${String(exportFile.kdfType)} in export file`);
   }
 
+  // 3. Derive master key (async — does not block event loop)
   const iterations = exportFile.kdfIterations ?? 600_000;
+  const masterKey = await deriveMasterKey(masterPassword, email, iterations);
 
-  // 3. Derive master key and stretch into enc + mac keys
-  const masterKey = deriveMasterKey(masterPassword, email, iterations);
-  const { encKey, macKey } = stretchKey(masterKey);
+  // 4. Stretch into enc + mac keys using HKDF-Expand (Bitwarden's stretchKey)
+  const { encKey: stretchedEncKey, macKey: stretchedMacKey } = stretchMasterKey(masterKey);
 
-  // 4. Verify derived keys using encKeyValidation_DO_NOT_EDIT (if present)
-  if (exportFile.encKeyValidation_DO_NOT_EDIT) {
-    try {
-      decryptEncString(exportFile.encKeyValidation_DO_NOT_EDIT, encKey, macKey);
-    } catch {
-      throw new Error('Master password or email is incorrect (key validation failed)');
-    }
+  // 5. Decrypt encKeyValidation_DO_NOT_EDIT → 64-byte account enc key
+  //    The stretched master key encrypts the account's symmetric key;
+  //    that symmetric key is what actually encrypts the vault data.
+  if (!exportFile.encKeyValidation_DO_NOT_EDIT) {
+    throw new Error(
+      'Export file is missing encKeyValidation_DO_NOT_EDIT — ' +
+      'cannot derive the account encryption key for offline decryption.',
+    );
   }
 
-  // 5. Decrypt the vault data blob
+  let userKeyBytes: Buffer;
+  try {
+    userKeyBytes = decryptEncString(exportFile.encKeyValidation_DO_NOT_EDIT, stretchedEncKey, stretchedMacKey);
+  } catch {
+    throw new Error('Master password or email is incorrect (account key decryption failed)');
+  }
+
+  if (userKeyBytes.length !== 64) {
+    throw new Error(
+      `Unexpected account key length: ${String(userKeyBytes.length)} bytes (expected 64). ` +
+      'The export format may be unsupported.',
+    );
+  }
+
+  // Split the 64-byte user key into enc (0–31) and mac (32–63)
+  const userEncKey = userKeyBytes.subarray(0, 32);
+  const userMacKey = userKeyBytes.subarray(32, 64);
+
+  // 6. Decrypt vault data blob using the account enc key
   if (!exportFile.data) {
     throw new Error('Export file has no data field');
   }
 
   let plaintext: Buffer;
   try {
-    plaintext = decryptEncString(exportFile.data, encKey, macKey);
+    plaintext = decryptEncString(exportFile.data, userEncKey, userMacKey);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('HMAC')) {
-      throw new Error('Master password or email is incorrect (data decryption failed)');
+      throw new Error('Vault data HMAC verification failed — the export may be corrupted');
     }
     throw err;
   }
 
-  // 6. Parse the decrypted JSON
+  // 7. Parse decrypted JSON
   const vault = JSON.parse(plaintext.toString('utf8')) as BwVaultData;
   return { folders: vault.folders ?? [], items: vault.items ?? [] };
 }
