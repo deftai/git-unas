@@ -30,7 +30,6 @@ browseRouter.get('/', (req: Request, res: Response) => {
 
     const rawEntries = fs.readdirSync(dirPath, { withFileTypes: true });
     const items: BrowseItem[] = rawEntries
-      .filter((e) => !e.name.startsWith('.')) // hide hidden entries
       .map((e) => {
         const fullPath = path.join(dirPath, e.name);
         let isDir = e.isDirectory();
