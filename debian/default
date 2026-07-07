@@ -32,3 +32,7 @@ AUTH_LOG_PATH=/etc/git-unas/auth-log.json
 # Bitwarden vault archive
 BW_ARCHIVE_CONFIG_PATH=/etc/git-unas/bw-archive-config.json
 BW_ARCHIVE_RUNS_PATH=/etc/git-unas/bw-archive-runs.json
+
+# Fly.io archive
+FLY_ARCHIVE_CONFIG_PATH=/etc/git-unas/fly-archive-config.json
+FLY_ARCHIVE_RUNS_PATH=/etc/git-unas/fly-archive-runs.json

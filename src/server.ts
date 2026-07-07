@@ -7,12 +7,14 @@ import { encryptRouter } from './routes/encrypt';
 import { scheduleRouter } from './routes/schedule';
 import { archiveRouter } from './routes/archive';
 import { bitwardenRouter } from './routes/bitwarden';
+import { flyRouter } from './routes/fly';
 import { browseRouter } from './routes/browse';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './middleware/requireAuth';
 import { loadConfig, startScheduler } from './services/scheduleService';
 import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
 import { loadBwArchiveConfig, startBwArchiveScheduler } from './services/bitwardenArchiveService';
+import { loadFlyArchiveConfig, startFlyArchiveScheduler } from './services/flyArchiveService';
 import pkgJson from '../package.json';
 
 const app = express();
@@ -52,6 +54,7 @@ app.get('/api/status', (_req, res) => {
 });
 
 app.use('/api/bitwarden', bitwardenRouter);
+app.use('/api/fly', flyRouter);
 app.use('/api/browse', browseRouter);
 
 // Serve admin UI
@@ -69,6 +72,7 @@ if (require.main === module) {
   startScheduler(loadConfig());
   startArchiveScheduler(loadArchiveConfig());
   startBwArchiveScheduler(loadBwArchiveConfig());
+  startFlyArchiveScheduler(loadFlyArchiveConfig());
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`git-unas admin server listening on http://127.0.0.1:${PORT}`);
