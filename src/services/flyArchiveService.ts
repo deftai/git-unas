@@ -40,15 +40,35 @@ export interface FlyArchiveConfig {
   encryptedToken: string;
 }
 
+export interface FlyAppDiff {
+  name: string;
+  machinesAdded: string[];
+  machinesRemoved: string[];
+  machinesChanged: string[];
+  volumesAdded: string[];
+  volumesRemoved: string[];
+  volumesChanged: string[];
+  secretsAdded: string[];
+  secretsRemoved: string[];
+  secretsChanged: string[];
+}
+
+export interface FlyArchiveDiff {
+  appsAdded: string[];
+  appsRemoved: string[];
+  appsChanged: FlyAppDiff[];
+}
+
 export interface FlyArchiveRun {
   id: string;
   startedAt: string;
   completedAt: string;
   durationMs: number;
-  status: 'ok' | 'error';
+  status: 'ok' | 'error' | 'no-change';
   message: string;
   filePath?: string;
   appCount?: number;
+  diff?: FlyArchiveDiff;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +196,125 @@ function makeArchivePath(baseDir: string): string {
   return path.join(baseDir, `fly-archive-${ts}.json`);
 }
 
+function loadPreviousSnapshot(baseDir: string): FlyArchiveSnapshot | null {
+  if (!baseDir || !fs.existsSync(baseDir)) return null;
+  try {
+    const files = fs.readdirSync(baseDir)
+      .filter(name => /^fly-archive-.*\.json$/.test(name))
+      .map(name => path.join(baseDir, name))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    for (const filePath of files) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as FlyArchiveSnapshot;
+        if (Array.isArray(parsed.apps)) return parsed;
+      } catch { /* try next candidate */ }
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj).sort().map(key => `${JSON.stringify(key)}:${stableJson(obj[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function machineSignature(machine: unknown): string {
+  const m = machine as Record<string, unknown>;
+  const copy = { ...m };
+  delete copy.updated_at;
+  delete copy.instance_id;
+  delete copy.private_ip;
+  return stableJson(copy);
+}
+
+function volumeSignature(volume: unknown): string {
+  return stableJson(volume);
+}
+
+function secretSignature(secret: unknown): string {
+  const s = secret as Record<string, unknown>;
+  return stableJson({
+    digest: s.digest,
+    label: s.label,
+    version: s.version,
+    created_at: s.created_at,
+  });
+}
+
+function diffById<T>(
+  before: T[],
+  after: T[],
+  idOf: (item: T) => string,
+  signatureOf: (item: T) => string,
+): { added: string[]; removed: string[]; changed: string[] } {
+  const beforeMap = new Map(before.map(item => [idOf(item), signatureOf(item)]));
+  const afterMap = new Map(after.map(item => [idOf(item), signatureOf(item)]));
+  const added = [...afterMap.keys()].filter(id => !beforeMap.has(id)).sort();
+  const removed = [...beforeMap.keys()].filter(id => !afterMap.has(id)).sort();
+  const changed = [...afterMap.keys()]
+    .filter(id => beforeMap.has(id) && beforeMap.get(id) !== afterMap.get(id))
+    .sort();
+  return { added, removed, changed };
+}
+
+function diffAppSnapshots(before: FlyArchiveSnapshot['apps'][number], after: FlyArchiveSnapshot['apps'][number]): FlyAppDiff | null {
+  const machines = diffById(before.machines, after.machines, item => item.id, machineSignature);
+  const volumes = diffById(before.volumes, after.volumes, item => item.id, volumeSignature);
+  const secrets = diffById(before.secrets, after.secrets, item => item.name, secretSignature);
+  const diff: FlyAppDiff = {
+    name: after.name,
+    machinesAdded: machines.added,
+    machinesRemoved: machines.removed,
+    machinesChanged: machines.changed,
+    volumesAdded: volumes.added,
+    volumesRemoved: volumes.removed,
+    volumesChanged: volumes.changed,
+    secretsAdded: secrets.added,
+    secretsRemoved: secrets.removed,
+    secretsChanged: secrets.changed,
+  };
+  const changed = Object.entries(diff)
+    .some(([key, value]) => key !== 'name' && Array.isArray(value) && value.length > 0);
+  return changed ? diff : null;
+}
+
+function computeSnapshotDiff(before: FlyArchiveSnapshot | null, after: FlyArchiveSnapshot): FlyArchiveDiff {
+  if (!before) {
+    return {
+      appsAdded: after.apps.map(app => app.name).sort(),
+      appsRemoved: [],
+      appsChanged: [],
+    };
+  }
+  const beforeApps = new Map(before.apps.map(app => [app.name, app]));
+  const afterApps = new Map(after.apps.map(app => [app.name, app]));
+  const appsAdded = [...afterApps.keys()].filter(name => !beforeApps.has(name)).sort();
+  const appsRemoved = [...beforeApps.keys()].filter(name => !afterApps.has(name)).sort();
+  const appsChanged = [...afterApps.values()]
+    .map(app => {
+      const prev = beforeApps.get(app.name);
+      return prev ? diffAppSnapshots(prev, app) : null;
+    })
+    .filter((diff): diff is FlyAppDiff => diff !== null)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { appsAdded, appsRemoved, appsChanged };
+}
+
+function isDiffEmpty(diff: FlyArchiveDiff): boolean {
+  return diff.appsAdded.length === 0 && diff.appsRemoved.length === 0 && diff.appsChanged.length === 0;
+}
+
+function diffChangeCount(diff: FlyArchiveDiff): number {
+  return diff.appsAdded.length + diff.appsRemoved.length + diff.appsChanged.reduce((total, app) => total
+    + app.machinesAdded.length + app.machinesRemoved.length + app.machinesChanged.length
+    + app.volumesAdded.length + app.volumesRemoved.length + app.volumesChanged.length
+    + app.secretsAdded.length + app.secretsRemoved.length + app.secretsChanged.length, 0);
+}
+
 /** Small delay to avoid hitting Fly.io rate limits between per-app requests. */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -245,6 +384,27 @@ export async function runFlyArchive(): Promise<FlyArchiveRun> {
     };
 
     if (!fs.existsSync(config.baseDir)) fs.mkdirSync(config.baseDir, { recursive: true });
+
+    const previousSnapshot = loadPreviousSnapshot(config.baseDir);
+    const diff = computeSnapshotDiff(previousSnapshot, snapshot);
+    const changeCount = diffChangeCount(diff);
+
+    // Skip writing when nothing changed (first-run diff counts all apps as "added"
+    // so isDiffEmpty is false on first run — that's intentional, we always write first snapshot).
+    if (previousSnapshot && isDiffEmpty(diff)) {
+      const run: FlyArchiveRun = {
+        id: crypto.randomUUID(), startedAt,
+        completedAt: new Date().toISOString(), durationMs: Date.now() - startMs,
+        status: 'no-change',
+        message: 'No changes since last snapshot',
+        appCount: apps.length,
+        diff,
+      };
+      saveFlyArchiveRun(run);
+      _progress = { running: false, currentApp: '', done: apps.length, total: apps.length };
+      return run;
+    }
+
     const outputPath = makeArchivePath(config.baseDir);
     fs.writeFileSync(outputPath, JSON.stringify(snapshot, null, 2));
 
@@ -254,9 +414,12 @@ export async function runFlyArchive(): Promise<FlyArchiveRun> {
       id: crypto.randomUUID(), startedAt,
       completedAt: new Date().toISOString(), durationMs: Date.now() - startMs,
       status: 'ok',
-      message: path.basename(outputPath),
+      message: previousSnapshot
+        ? `${changeCount} change${changeCount !== 1 ? 's' : ''} — ${path.basename(outputPath)}`
+        : path.basename(outputPath),
       filePath: outputPath,
       appCount: apps.length,
+      diff,
     };
     saveFlyArchiveRun(run);
     _progress = { running: false, currentApp: '', done: apps.length, total: apps.length };

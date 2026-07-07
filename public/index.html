@@ -1639,18 +1639,46 @@ async function flyArchLoadStatus() {
   }
 }
 
+function flyDiffSummary(diff) {
+  if (!diff) return '—';
+  const parts = [];
+  if (diff.appsAdded.length) parts.push(`+${diff.appsAdded.length} app${diff.appsAdded.length !== 1 ? 's' : ''}`);
+  if (diff.appsRemoved.length) parts.push(`-${diff.appsRemoved.length} app${diff.appsRemoved.length !== 1 ? 's' : ''}`);
+  const mAdded = diff.appsChanged.reduce((n, a) => n + a.machinesAdded.length, 0);
+  const mRemoved = diff.appsChanged.reduce((n, a) => n + a.machinesRemoved.length, 0);
+  const mChanged = diff.appsChanged.reduce((n, a) => n + a.machinesChanged.length, 0);
+  const vAdded = diff.appsChanged.reduce((n, a) => n + a.volumesAdded.length, 0);
+  const vRemoved = diff.appsChanged.reduce((n, a) => n + a.volumesRemoved.length, 0);
+  const sAdded = diff.appsChanged.reduce((n, a) => n + a.secretsAdded.length, 0);
+  const sRemoved = diff.appsChanged.reduce((n, a) => n + a.secretsRemoved.length, 0);
+  const sChanged = diff.appsChanged.reduce((n, a) => n + a.secretsChanged.length, 0);
+  if (mAdded) parts.push(`+${mAdded}m`);
+  if (mRemoved) parts.push(`-${mRemoved}m`);
+  if (mChanged) parts.push(`~${mChanged}m`);
+  if (vAdded) parts.push(`+${vAdded}v`);
+  if (vRemoved) parts.push(`-${vRemoved}v`);
+  if (sAdded) parts.push(`+${sAdded}s`);
+  if (sRemoved) parts.push(`-${sRemoved}s`);
+  if (sChanged) parts.push(`~${sChanged}s`);
+  return parts.length ? parts.join(' ') : 'no changes';
+}
+
 async function flyArchLoadHistory() {
   try {
     const r = await fetch('api/fly/archive/runs');
     const runs = await r.json();
     const el = document.getElementById('fly-arch-history');
     if (!runs.length) { el.innerHTML = '<span style="color:#5a6172;font-size:12px">No runs yet.</span>'; return; }
-    el.innerHTML = '<table class="run-table"><thead><tr><th>Time</th><th>Duration</th><th>Status</th><th>Apps</th><th>File</th></tr></thead><tbody>' +
+    el.innerHTML = '<table class="run-table"><thead><tr><th>Time</th><th>Duration</th><th>Status</th><th>Apps</th><th>Changes</th><th>File</th></tr></thead><tbody>' +
       runs.slice(0, 10).map(r => {
-        const cls = r.status === 'ok' ? 'green' : 'red';
-        const file = r.status === 'ok' ? `<span style="color:#7a8190;font-size:11px">${escHtml(r.message)}</span>` : `<span style="color:#9aa0a6;font-size:11px">${escHtml(r.message)}</span>`;
+        const cls = r.status === 'ok' ? 'green' : r.status === 'no-change' ? 'grey' : 'red';
+        const file = r.filePath
+          ? `<span style="color:#7a8190;font-size:11px">${escHtml(r.message.split('—').pop().trim())}</span>`
+          : `<span style="color:#5a6172;font-size:11px">—</span>`;
         const apps = r.appCount !== undefined ? `<span style="color:#9aa0a6">${r.appCount}</span>` : '—';
-        return `<tr><td style="white-space:nowrap;color:#9aa0a6">${new Date(r.startedAt).toLocaleString()}</td><td style="color:#9aa0a6">${Math.round(r.durationMs/1000)}s</td><td><span class="pill ${cls}">${r.status}</span></td><td>${apps}</td><td>${file}</td></tr>`;
+        const diffSummary = r.status === 'error' ? '—'
+          : `<span style="color:#7a8190;font-size:11px;font-family:monospace">${escHtml(flyDiffSummary(r.diff))}</span>`;
+        return `<tr><td style="white-space:nowrap;color:#9aa0a6">${new Date(r.startedAt).toLocaleString()}</td><td style="color:#9aa0a6">${Math.round(r.durationMs/1000)}s</td><td><span class="pill ${cls}">${r.status}</span></td><td>${apps}</td><td>${diffSummary}</td><td>${file}</td></tr>`;
       }).join('') + '</tbody></table>';
   } catch {}
 }
@@ -1688,7 +1716,8 @@ async function flyArchRun() {
     const status = r.data.run?.status ?? 'error';
     const message = r.data.run?.message ?? (r.data.error || 'Failed');
     const apps = r.data.run?.appCount !== undefined ? ` (${r.data.run.appCount} apps)` : '';
-    msg('fly-arch-msg', status === 'ok' ? `Saved: ${message}${apps}` : message, status === 'ok');
+    const ok = status === 'ok' || status === 'no-change';
+    msg('fly-arch-msg', ok ? `${message}${status === 'no-change' ? '' : apps}` : message, ok);
   } catch (e) { clearInterval(pollTimer); msg('fly-arch-msg', 'Request failed: ' + e, false); }
   spin(false);
 }
