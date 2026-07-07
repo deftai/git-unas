@@ -1,6 +1,6 @@
 #!/bin/sh
 # build-deb.sh — build dist/git-unas_<version>_arm64.deb
-# Must be run after `npm run build` and `npm run build:bundle`.
+# Always runs `npm run build && npm run build:bundle` first.
 # Usage: scripts/build-deb.sh [--arch arm64] [--version X.Y.Z]
 set -e
 
@@ -26,14 +26,15 @@ fi
 
 echo "==> Building git-unas_${VERSION}_${ARCH}.deb"
 
+# Always rebuild TypeScript + ncc bundle from source
+echo "==> Compiling TypeScript..."
+npm --prefix "${REPO_ROOT}" run build
+echo "==> Bundling with ncc..."
+npm --prefix "${REPO_ROOT}" run build:bundle
+
 STAGE="${REPO_ROOT}/dist/deb-stage"
 DEB_OUT="${REPO_ROOT}/dist/git-unas_${VERSION}_${ARCH}.deb"
 BUNDLE="${REPO_ROOT}/dist/bundle/index.js"
-
-if [ ! -f "$BUNDLE" ]; then
-    echo "ERROR: bundle not found at $BUNDLE — run 'npm run build && npm run build:bundle' first" >&2
-    exit 1
-fi
 
 # ---- Clean and stage ----
 rm -rf "$STAGE"
