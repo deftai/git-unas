@@ -214,14 +214,18 @@ export async function runFlyArchive(): Promise<FlyArchiveRun> {
   try {
     const apps = await getFlyApps(token, config.orgSlug);
 
+    _progress = { running: true, currentApp: '', done: 0, total: apps.length };
+
     const appSnapshots = [];
     for (const app of apps) {
+      _progress.currentApp = app.name;
       await sleep(200); // 200ms between apps to stay within rate limits
       const [machines, secrets, volumes] = await Promise.all([
         getFlyMachines(token, app.name),
         getFlySecrets(token, app.name),
         getFlyVolumes(token, app.name),
       ]);
+      _progress.done += 1;
       appSnapshots.push({
         name: app.name,
         status: app.status,
@@ -255,11 +259,30 @@ export async function runFlyArchive(): Promise<FlyArchiveRun> {
       appCount: apps.length,
     };
     saveFlyArchiveRun(run);
+    _progress = { running: false, currentApp: '', done: apps.length, total: apps.length };
     return run;
 
   } catch (err) {
+    _progress = { running: false, currentApp: '', done: _progress.done, total: _progress.total };
     return fail(err instanceof Error ? err.message : String(err));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Progress tracking (in-memory, reset on each run)
+// ---------------------------------------------------------------------------
+
+interface FlyArchiveProgress {
+  running: boolean;
+  currentApp: string;
+  done: number;
+  total: number;
+}
+
+let _progress: FlyArchiveProgress = { running: false, currentApp: '', done: 0, total: 0 };
+
+export function getFlyArchiveProgress(): FlyArchiveProgress {
+  return { ..._progress };
 }
 
 // ---------------------------------------------------------------------------

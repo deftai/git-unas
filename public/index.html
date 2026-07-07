@@ -1670,16 +1670,26 @@ async function flyArchSave() {
 }
 
 async function flyArchRun() {
-  spin(true, 'Running Fly.io archive…');
+  spin(true, 'Starting Fly.io archive…');
+  const pollTimer = setInterval(async () => {
+    try {
+      const p = await fetch('api/fly/archive/progress');
+      const prog = await p.json();
+      if (prog.running && prog.total > 0) {
+        spin(true, `Fly.io archive: ${prog.currentApp} (${prog.done}/${prog.total})`);
+      }
+    } catch {}
+  }, 500);
   try {
     const r = await post('api/fly/archive/run', {});
+    clearInterval(pollTimer);
     flyArchLoadHistory();
     flyArchLoadStatus();
     const status = r.data.run?.status ?? 'error';
     const message = r.data.run?.message ?? (r.data.error || 'Failed');
     const apps = r.data.run?.appCount !== undefined ? ` (${r.data.run.appCount} apps)` : '';
     msg('fly-arch-msg', status === 'ok' ? `Saved: ${message}${apps}` : message, status === 'ok');
-  } catch (e) { msg('fly-arch-msg', 'Request failed: ' + e, false); }
+  } catch (e) { clearInterval(pollTimer); msg('fly-arch-msg', 'Request failed: ' + e, false); }
   spin(false);
 }
 

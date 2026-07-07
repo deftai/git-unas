@@ -8,6 +8,7 @@ import {
   startFlyArchiveScheduler,
   encryptFlyToken,
   decryptFlyToken,
+  getFlyArchiveProgress,
   type FlyArchiveFrequency,
 } from '../services/flyArchiveService';
 import { verifyFlyToken } from '../services/flyService';
@@ -89,4 +90,9 @@ flyRouter.post('/archive/run', async (_req: Request, res: Response) => {
 // GET /api/fly/archive/runs
 flyRouter.get('/archive/runs', (_req: Request, res: Response) => {
   res.json(loadFlyArchiveRuns());
+});
+
+// GET /api/fly/archive/progress
+flyRouter.get('/archive/progress', (_req: Request, res: Response) => {
+  res.json(getFlyArchiveProgress());
 });
