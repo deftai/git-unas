@@ -21,11 +21,19 @@ export interface FlyApp {
   network?: string;
 }
 
+export interface FlyMachineMount {
+  path: string;
+  volume: string;
+  name?: string;
+  size_gb?: number;
+}
+
 export interface FlyMachineConfig {
   image?: string;
   env?: Record<string, string>;
   services?: unknown[];
   checks?: unknown;
+  mounts?: FlyMachineMount[];
   [key: string]: unknown;
 }
 
@@ -60,6 +68,11 @@ export interface FlyVolume {
   created_at?: string;
   attached_machine_id?: string;
   fstype?: string;
+  /** Disk usage fields returned by the API (may be 0 on unformatted volumes). */
+  blocks?: number;
+  block_size?: number;
+  blocks_free?: number;
+  blocks_avail?: number;
 }
 
 export interface FlyAppSnapshot {
@@ -94,6 +107,23 @@ async function flyGet<T>(token: string, path: string): Promise<T> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Fly API ${path} → HTTP ${String(res.status)}: ${body.slice(0, 200)}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+async function flyPost<T>(token: string, path: string, body: unknown): Promise<T> {
+  const url = `${FLY_API_BASE}${path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Fly API POST ${path} → HTTP ${String(res.status)}: ${text.slice(0, 200)}`);
   }
   return res.json() as Promise<T>;
 }
@@ -148,4 +178,30 @@ export async function verifyFlyToken(
 ): Promise<{ orgSlug: string; appCount: number }> {
   const apps = await getFlyApps(token, orgSlug);
   return { orgSlug, appCount: apps.length };
+}
+
+export interface FlyExecResult {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  exit_signal: number;
+}
+
+/**
+ * Execute a command inside a running Fly Machine.
+ * stdout is returned as a plain string — binary output must be base64-encoded
+ * by the command itself.
+ */
+export async function execOnMachine(
+  token: string,
+  appName: string,
+  machineId: string,
+  cmd: string,
+  timeoutSec = 180,
+): Promise<FlyExecResult> {
+  return flyPost<FlyExecResult>(
+    token,
+    `/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/exec`,
+    { cmd, timeout: timeoutSec },
+  );
 }

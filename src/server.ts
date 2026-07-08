@@ -15,6 +15,7 @@ import { loadConfig, startScheduler } from './services/scheduleService';
 import { loadArchiveConfig, startArchiveScheduler } from './services/archiveService';
 import { loadBwArchiveConfig, startBwArchiveScheduler } from './services/bitwardenArchiveService';
 import { loadFlyArchiveConfig, startFlyArchiveScheduler } from './services/flyArchiveService';
+import { loadFlyVolBackupConfig, startFlyVolBackupScheduler } from './services/flyVolBackupService';
 import pkgJson from '../package.json';
 
 const app = express();
@@ -73,6 +74,7 @@ if (require.main === module) {
   startArchiveScheduler(loadArchiveConfig());
   startBwArchiveScheduler(loadBwArchiveConfig());
   startFlyArchiveScheduler(loadFlyArchiveConfig());
+  startFlyVolBackupScheduler(loadFlyVolBackupConfig());
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`git-unas admin server listening on http://127.0.0.1:${PORT}`);

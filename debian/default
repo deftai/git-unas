@@ -36,3 +36,7 @@ BW_ARCHIVE_RUNS_PATH=/etc/git-unas/bw-archive-runs.json
 # Fly.io archive
 FLY_ARCHIVE_CONFIG_PATH=/etc/git-unas/fly-archive-config.json
 FLY_ARCHIVE_RUNS_PATH=/etc/git-unas/fly-archive-runs.json
+
+# Fly.io volume backup
+FLY_VOL_BACKUP_CONFIG_PATH=/etc/git-unas/fly-vol-backup-config.json
+FLY_VOL_BACKUP_RUNS_PATH=/etc/git-unas/fly-vol-backup-runs.json

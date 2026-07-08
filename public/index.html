@@ -611,6 +611,64 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
   <div id="fly-arch-history"></div>
 </div>
 <div class="msg" id="fly-arch-msg"></div>
+
+<!-- Volume Backup sub-section -->
+<div style="margin-top:14px;border-top:1px solid #2a3140;padding-top:12px">
+  <div style="font-size:11px;color:#9aa0a6;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Volume Backup</div>
+  <div style="background:#2a2010;border:1px solid #6a4a10;border-radius:4px;padding:8px 10px;font-size:11px;color:#e0c080;margin-bottom:10px;line-height:1.5">
+    Execs <code>tar | base64</code> inside each running machine to copy volume data to this NAS.<br>
+    Machine must be <strong>started</strong>. Volumes over the size limit are skipped.<br>
+    Each run is a full snapshot — not incremental. Exec timeout max is 300 s.
+  </div>
+  <div class="kv" id="fly-vol-backup-status-kv" style="margin-bottom:8px"></div>
+  <div class="row"><label>Output dir</label>
+    <input type="text" id="fly-vol-backup-dir" placeholder="/srv/backups/fly-volumes">
+    <button class="browse-btn" onclick="openBrowser('fly-vol-backup-dir')" title="Browse">📁</button>
+  </div>
+  <div class="row"><label>Org slug</label>
+    <input type="text" id="fly-vol-backup-org" placeholder="(inherited from archive config)">
+  </div>
+  <div class="row"><label>Max volume MB</label>
+    <input type="text" id="fly-vol-backup-maxmb" placeholder="500" style="width:70px;flex:none">
+    <span style="font-size:12px;color:#9aa0a6">skip if used data exceeds this</span>
+  </div>
+  <div class="row"><label>Exec timeout (s)</label>
+    <input type="text" id="fly-vol-backup-timeout" placeholder="180" style="width:70px;flex:none">
+    <span style="font-size:12px;color:#9aa0a6">10–300</span>
+  </div>
+  <div class="row"><label>Frequency</label>
+    <select id="fly-vol-backup-freq">
+      <option value="daily">Daily (4am)</option>
+      <option value="hourly">Hourly</option>
+      <option value="weekly">Weekly</option>
+      <option value="monthly">Monthly</option>
+    </select>
+  </div>
+  <div class="row"><label>Retention</label>
+    <select id="fly-vol-backup-retention">
+      <option value="7">7 days</option>
+      <option value="14" selected>14 days</option>
+      <option value="30">30 days</option>
+      <option value="60">60 days</option>
+      <option value="90">90 days</option>
+    </select>
+  </div>
+  <div class="row"><label>Enable</label>
+    <select id="fly-vol-backup-enabled">
+      <option value="false">Disabled</option>
+      <option value="true">Enabled</option>
+    </select>
+  </div>
+  <div class="row">
+    <button onclick="flyVolBackupSave()">Save config</button>
+    <button onclick="flyVolBackupRun()" style="background:#111621;border-color:#3a4255;color:#c6c9cc">▶ Run now</button>
+  </div>
+  <div style="margin-top:8px">
+    <div style="font-size:11px;color:#9aa0a6;margin-bottom:4px">Run history</div>
+    <div id="fly-vol-backup-history"></div>
+  </div>
+  <div class="msg" id="fly-vol-backup-msg"></div>
+</div>
 </div>
 
 <!-- Admin Panel -->
@@ -1722,6 +1780,121 @@ async function flyArchRun() {
   spin(false);
 }
 
+// ---- Fly.io Volume Backup ----
+async function flyVolBackupLoad() {
+  try {
+    const r = await fetch('api/fly/vol-backup/config');
+    const c = await r.json();
+    if (!r.ok) return;
+    document.getElementById('fly-vol-backup-dir').value = c.baseDir || '';
+    document.getElementById('fly-vol-backup-org').value = c.orgSlug || '';
+    document.getElementById('fly-vol-backup-maxmb').value = String(c.maxVolumeMb ?? 500);
+    document.getElementById('fly-vol-backup-timeout').value = String(c.execTimeoutSec ?? 180);
+    document.getElementById('fly-vol-backup-freq').value = c.frequency || 'daily';
+    document.getElementById('fly-vol-backup-retention').value = String(c.retentionDays || 14);
+    document.getElementById('fly-vol-backup-enabled').value = String(c.enabled);
+  } catch {}
+  flyVolBackupLoadStatus();
+  flyVolBackupLoadHistory();
+}
+
+async function flyVolBackupLoadStatus() {
+  const kv = document.getElementById('fly-vol-backup-status-kv');
+  try {
+    const runs = await (await fetch('api/fly/vol-backup/runs')).json();
+    if (!runs.length) { kv.innerHTML = '<span class="k">Status</span><span style="color:#5a6172">No runs yet</span>'; return; }
+    const last = runs[0];
+    const cls = last.status === 'ok' ? 'green' : last.status === 'partial' ? 'amber' : 'red';
+    const totalSize = (last.results || []).filter(r => r.status === 'ok').reduce((n, r) => n + (r.fileSizeBytes || 0), 0);
+    kv.innerHTML =
+      `<span class="k">Last run</span><span><span class="pill ${cls}">${last.status}</span> ${new Date(last.startedAt).toLocaleString()}</span>` +
+      `<span class="k">Machines</span><span style="color:#c6c9cc">${last.machinesSucceeded}/${last.machinesAttempted} backed up` +
+        (last.machinesSkipped ? `, ${last.machinesSkipped} skipped` : '') + `</span>` +
+      (totalSize ? `<span class="k">Backup size</span><span style="color:#c6c9cc">${fmtSize(totalSize)}</span>` : '');
+  } catch { kv.innerHTML = ''; }
+}
+
+async function flyVolBackupLoadHistory() {
+  const el = document.getElementById('fly-vol-backup-history');
+  try {
+    const runs = await (await fetch('api/fly/vol-backup/runs')).json();
+    if (!runs.length) { el.innerHTML = '<span style="color:#5a6172;font-size:12px">No runs yet.</span>'; return; }
+    el.innerHTML = '<table class="run-table"><thead><tr><th>Time</th><th>Dur</th><th>Status</th><th>OK</th><th>Skip</th><th>Fail</th><th></th></tr></thead><tbody>' +
+      runs.slice(0, 10).map((r, i) => {
+        const cls = r.status === 'ok' ? 'green' : r.status === 'partial' ? 'amber' : 'red';
+        return `<tr>
+          <td style="white-space:nowrap;color:#9aa0a6">${new Date(r.startedAt).toLocaleString()}</td>
+          <td style="color:#9aa0a6">${Math.round(r.durationMs/1000)}s</td>
+          <td><span class="pill ${cls}">${r.status}</span></td>
+          <td style="color:#a0e0a0">${r.machinesSucceeded}</td>
+          <td style="color:#9aa0a6">${r.machinesSkipped}</td>
+          <td style="color:#e0a0a0">${r.machinesFailed}</td>
+          <td><button onclick="flyVolBackupToggleDetail('fly-vol-detail-${i}')" style="font-size:10px;padding:2px 6px;background:#111621;border-color:#3a4255;color:#9aa0a6">▼</button></td>
+        </tr>
+        <tr id="fly-vol-detail-${i}" style="display:none">
+          <td colspan="7" style="padding:4px 6px 8px">
+            ${(r.results||[]).map(res => {
+              const rc = res.status === 'ok' ? '#a0e0a0' : res.status === 'skipped' ? '#9aa0a6' : '#e0a0a0';
+              const sz = res.fileSizeBytes ? ` <span style="color:#7a8190">(${fmtSize(res.fileSizeBytes)})</span>` : '';
+              return `<div style="font-size:11px;padding:2px 0;border-bottom:1px solid #1a1f2b">
+                <span style="color:${rc}">${escHtml(res.status)}</span>
+                <span style="color:#c6c9cc;margin:0 4px">${escHtml(res.appName)}/${escHtml(res.machineName)}</span>
+                <span style="color:#7a8190">${escHtml(res.mountPath)}</span>${sz}
+                ${res.error ? `<span style="color:#e0a0a0;font-size:10px"> — ${escHtml(res.error.slice(0,120))}</span>` : ''}
+              </div>`;
+            }).join('')}
+          </td>
+        </tr>`;
+      }).join('') + '</tbody></table>';
+  } catch { el.innerHTML = '<span style="color:#e0a0a0;font-size:12px">Failed to load.</span>'; }
+}
+
+function flyVolBackupToggleDetail(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+async function flyVolBackupSave() {
+  const baseDir = document.getElementById('fly-vol-backup-dir').value.trim();
+  if (!baseDir) { msg('fly-vol-backup-msg', 'Output directory is required', false); return; }
+  const maxVolumeMb = parseInt(document.getElementById('fly-vol-backup-maxmb').value, 10);
+  const execTimeoutSec = parseInt(document.getElementById('fly-vol-backup-timeout').value, 10);
+  if (isNaN(maxVolumeMb) || maxVolumeMb < 1) { msg('fly-vol-backup-msg', 'Max volume MB must be ≥1', false); return; }
+  if (isNaN(execTimeoutSec) || execTimeoutSec < 10 || execTimeoutSec > 300) { msg('fly-vol-backup-msg', 'Exec timeout must be 10–300', false); return; }
+  const r = await post('api/fly/vol-backup/config', {
+    baseDir,
+    orgSlug: document.getElementById('fly-vol-backup-org').value.trim(),
+    maxVolumeMb,
+    execTimeoutSec,
+    frequency: document.getElementById('fly-vol-backup-freq').value,
+    retentionDays: parseInt(document.getElementById('fly-vol-backup-retention').value, 10),
+    enabled: document.getElementById('fly-vol-backup-enabled').value === 'true',
+  });
+  msg('fly-vol-backup-msg', r.ok ? 'Config saved.' : (r.data.error || 'Failed'), r.ok);
+}
+
+async function flyVolBackupRun() {
+  spin(true, 'Starting volume backup…');
+  const pollTimer = setInterval(async () => {
+    try {
+      const p = await (await fetch('api/fly/vol-backup/progress')).json();
+      if (p.running && p.total > 0) {
+        spin(true, `Volume backup: ${p.currentMachine} (${p.done}/${p.total})`);
+      }
+    } catch {}
+  }, 500);
+  try {
+    const r = await post('api/fly/vol-backup/run', {});
+    clearInterval(pollTimer);
+    flyVolBackupLoadHistory();
+    flyVolBackupLoadStatus();
+    const run = r.data.run;
+    const ok = run?.status !== 'error';
+    msg('fly-vol-backup-msg', ok ? run?.message || 'Done' : (run?.message || r.data.error || 'Failed'), ok);
+  } catch (e) { clearInterval(pollTimer); msg('fly-vol-backup-msg', 'Request failed: ' + e, false); }
+  spin(false);
+}
+
 // ---- Authentication ----
 let _currentUser = null;
 
@@ -1768,6 +1941,7 @@ function appInit() {
   bwRefreshStatus();
   bwArchLoad();
   flyArchLoad();
+  flyVolBackupLoad();
 }
 
 async function doSetup() {
