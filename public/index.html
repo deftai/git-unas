@@ -630,7 +630,7 @@ Mirror GitHub repos and orgs to the NAS automatically. Uses <code>git clone --mi
   </div>
   <div class="row"><label>Max volume MB</label>
     <input type="text" id="fly-vol-backup-maxmb" placeholder="500" style="width:70px;flex:none">
-    <span style="font-size:12px;color:#9aa0a6">skip if used data exceeds this</span>
+    <span style="font-size:12px;color:#9aa0a6">0 = unlimited</span>
   </div>
   <div class="row"><label>Exec timeout (s)</label>
     <input type="text" id="fly-vol-backup-timeout" placeholder="180" style="width:70px;flex:none">
@@ -1859,7 +1859,7 @@ async function flyVolBackupSave() {
   if (!baseDir) { msg('fly-vol-backup-msg', 'Output directory is required', false); return; }
   const maxVolumeMb = parseInt(document.getElementById('fly-vol-backup-maxmb').value, 10);
   const execTimeoutSec = parseInt(document.getElementById('fly-vol-backup-timeout').value, 10);
-  if (isNaN(maxVolumeMb) || maxVolumeMb < 1) { msg('fly-vol-backup-msg', 'Max volume MB must be ≥1', false); return; }
+  if (isNaN(maxVolumeMb) || maxVolumeMb < 0) { msg('fly-vol-backup-msg', 'Max volume MB must be ≥0 (0 = unlimited)', false); return; }
   if (isNaN(execTimeoutSec) || execTimeoutSec < 10 || execTimeoutSec > 300) { msg('fly-vol-backup-msg', 'Exec timeout must be 10–300', false); return; }
   const r = await post('api/fly/vol-backup/config', {
     baseDir,

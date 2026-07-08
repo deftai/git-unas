@@ -131,8 +131,8 @@ flyRouter.post('/vol-backup/config', (req: Request, res: Response) => {
       res.status(400).json({ error: 'retentionDays must be 1–180' }); return;
     }
     const maxVolumeMb = body.maxVolumeMb !== undefined ? Number(body.maxVolumeMb) : current.maxVolumeMb;
-    if (!Number.isInteger(maxVolumeMb) || maxVolumeMb < 1) {
-      res.status(400).json({ error: 'maxVolumeMb must be ≥1' }); return;
+    if (!Number.isInteger(maxVolumeMb) || maxVolumeMb < 0) {
+      res.status(400).json({ error: 'maxVolumeMb must be ≥0 (0 = unlimited)' }); return;
     }
     const execTimeoutSec = body.execTimeoutSec !== undefined ? Number(body.execTimeoutSec) : current.execTimeoutSec;
     if (!Number.isInteger(execTimeoutSec) || execTimeoutSec < 10 || execTimeoutSec > 300) {

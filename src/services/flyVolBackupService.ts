@@ -40,7 +40,7 @@ export interface FlyVolBackupConfig {
   orgSlug: string;
   frequency: FlyArchiveFrequency;
   retentionDays: number;
-  /** Skip machines whose estimated used volume data exceeds this (MB). */
+  /** Skip machines whose estimated used volume data exceeds this (MB). 0 = no limit. */
   maxVolumeMb: number;
   /** Exec API timeout in seconds. Fly caps at 300 s. */
   execTimeoutSec: number;
@@ -144,12 +144,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function makeBackupPath(baseDir: string, appName: string, machineId: string): string {
+function makeRunDir(baseDir: string): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const now = new Date();
   const ts = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const dir = path.join(baseDir, `fly-vol-backup-${ts}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function makeBackupPath(runDir: string, appName: string, machineId: string): string {
   const safeName = appName.replace(/[^a-zA-Z0-9-]/g, '_');
-  return path.join(baseDir, `fly-vol-${safeName}-${machineId}-${ts}.tar.gz`);
+  return path.join(runDir, `${safeName}-${machineId}.tar.gz`);
 }
 
 function estimateUsedMb(volume: FlyVolume): number {
@@ -165,11 +171,11 @@ function pruneOldBackups(baseDir: string, retentionDays: number): void {
   const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
   try {
     for (const entry of fs.readdirSync(baseDir)) {
-      if (!entry.startsWith('fly-vol-') || !entry.endsWith('.tar.gz')) continue;
+      if (!entry.startsWith('fly-vol-backup-')) continue;
       const fullPath = path.join(baseDir, entry);
       const stat = fs.statSync(fullPath);
       if (stat.mtimeMs < cutoff) {
-        try { fs.unlinkSync(fullPath); } catch { /* best-effort */ }
+        try { fs.rmSync(fullPath, { recursive: true, force: true }); } catch { /* best-effort */ }
       }
     }
   } catch { /* best-effort */ }
@@ -213,9 +219,12 @@ export async function runFlyVolBackup(): Promise<FlyVolBackupRun> {
     return fail('Failed to decrypt stored API token');
   }
 
-  if (!fs.existsSync(config.baseDir)) {
-    try { fs.mkdirSync(config.baseDir, { recursive: true }); } catch { /* fall through */ }
-  }
+    if (!fs.existsSync(config.baseDir)) {
+      try { fs.mkdirSync(config.baseDir, { recursive: true }); } catch { /* fall through */ }
+    }
+
+    // Create a timestamped folder for this run
+    const runDir = makeRunDir(config.baseDir);
 
   const results: FlyVolBackupResult[] = [];
   let machinesAttempted = 0;
@@ -272,8 +281,8 @@ export async function runFlyVolBackup(): Promise<FlyVolBackupRun> {
         continue;
       }
 
-      // Skip oversized volumes
-      if (usedMb > config.maxVolumeMb) {
+      // Skip oversized volumes (0 = unlimited)
+      if (config.maxVolumeMb > 0 && usedMb > config.maxVolumeMb) {
         machinesSkipped++;
         results.push({
           appName: app, machineId: machine.id, machineName: machine.name,
@@ -305,7 +314,7 @@ export async function runFlyVolBackup(): Promise<FlyVolBackupRun> {
           });
         } else {
           const raw = Buffer.from(execResult.stdout.trim(), 'base64');
-          const outPath = makeBackupPath(config.baseDir, app, machine.id);
+          const outPath = makeBackupPath(runDir, app, machine.id);
           fs.writeFileSync(outPath, raw);
           machinesSucceeded++;
           results.push({
