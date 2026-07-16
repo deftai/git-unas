@@ -28,11 +28,6 @@ jobs:
       - name: Compile TypeScript
         run: npm run build
 
-      - name: Build ARM64 binary
-        run: |
-          # Running natively on arm64 — pkg generates V8 bytecode directly.
-          npm run build:binary
-
       - name: Extract version
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
